@@ -1,0 +1,18 @@
+services:
+  qdrant:
+    image: qdrant/qdrant:v1.12.1
+    container_name: nextpick-qdrant
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - ./qdrant_data:/qdrant/storage
+    restart: unless-stopped
+
+  redis:
+    image: redis:7.4-alpine
+    container_name: nextpick-redis
+    ports:
+      - "6379:6379"
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+    restart: unless-stopped

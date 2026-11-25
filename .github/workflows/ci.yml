@@ -16,6 +16,6 @@ jobs:
           python-version: "3.12"
       - name: Install test dependencies
         run: |
-          pip install duckdb numpy pandas pyarrow pytest torch onnx onnxscript onnxruntime
+          pip install duckdb numpy pandas pyarrow pytest torch onnx onnxscript onnxruntime fastapi httpx qdrant-client redis lightgbm
       - name: Run pytest
         run: PYTHONPATH=. pytest -v
