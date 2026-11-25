@@ -4,6 +4,8 @@ __pycache__/
 /data/
 /artifacts/
 /qdrant_data/
+web/node_modules/
+web/.next/
 *.pyc
 .DS_Store
 .env

@@ -19,3 +19,16 @@ jobs:
           pip install duckdb numpy pandas pyarrow pytest torch onnx onnxscript onnxruntime fastapi httpx qdrant-client redis lightgbm
       - name: Run pytest
         run: PYTHONPATH=. pytest -v
+
+  web-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install and build Next.js UI
+        working-directory: web
+        run: |
+          npm install
+          npm run build
