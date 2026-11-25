@@ -1,9 +1,9 @@
 .venv/
 __pycache__/
 .pytest_cache/
-data/
-artifacts/
-qdrant_data/
+/data/
+/artifacts/
+/qdrant_data/
 *.pyc
 .DS_Store
 .env
