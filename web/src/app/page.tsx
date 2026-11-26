@@ -211,31 +211,49 @@ export default function HomePage() {
               <button
                 key={item.article_id}
                 onClick={() => handleProductClick(item)}
-                className="text-left bg-slate-900/90 hover:bg-slate-800/90 border border-slate-800 hover:border-blue-500/60 rounded-xl p-4 transition"
+                className="text-left bg-slate-900/90 hover:bg-slate-800/90 border border-slate-800 hover:border-blue-500/60 rounded-xl p-4 transition flex gap-3.5 items-start"
               >
-                <div className="flex items-start justify-between gap-2 mb-2">
-                  <span className="text-xs font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-300">
-                    #{item.stage2_rank}
-                  </span>
-                  {item.rank_delta !== 0 && (
-                    <span
-                      className={`text-xs font-mono px-2 py-0.5 rounded ${
-                        item.rank_delta > 0
-                          ? "bg-emerald-950 text-emerald-300 border border-emerald-700/50"
-                          : "bg-amber-950 text-amber-300 border border-amber-700/50"
-                      }`}
-                    >
-                      S1 #{item.stage1_rank} → S2 #{item.stage2_rank} ({item.rank_delta > 0 ? `+${item.rank_delta}` : item.rank_delta})
-                    </span>
+                <div className="w-16 h-20 rounded-lg bg-slate-800 overflow-hidden shrink-0 flex items-center justify-center border border-slate-700/60">
+                  {item.image_url ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={item.image_url}
+                      alt={item.prod_name || item.article_id}
+                      className="w-full h-full object-cover"
+                      onError={(e) => {
+                        e.currentTarget.style.display = "none";
+                      }}
+                    />
+                  ) : (
+                    <span className="text-[10px] font-mono text-slate-500">SKU</span>
                   )}
                 </div>
-                <div className="font-semibold text-white truncate">{item.prod_name || item.article_id}</div>
-                <div className="text-xs text-slate-400 mt-1">
-                  {item.department_name} · {item.product_group_name}
-                </div>
-                <div className="mt-3 flex items-center justify-between text-xs">
-                  <span className="font-mono text-blue-300">Price: {item.price.toFixed(3)}</span>
-                  <span className="text-slate-500 font-mono">ID {item.article_id}</span>
+
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-start justify-between gap-2 mb-1.5 flex-wrap">
+                    <span className="text-xs font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-300">
+                      #{item.stage2_rank}
+                    </span>
+                    {item.rank_delta !== 0 && (
+                      <span
+                        className={`text-xs font-mono px-2 py-0.5 rounded ${
+                          item.rank_delta > 0
+                            ? "bg-emerald-950 text-emerald-300 border border-emerald-700/50"
+                            : "bg-amber-950 text-amber-300 border border-amber-700/50"
+                        }`}
+                      >
+                        S1 #{item.stage1_rank} → S2 #{item.stage2_rank} ({item.rank_delta > 0 ? `+${item.rank_delta}` : item.rank_delta})
+                      </span>
+                    )}
+                  </div>
+                  <div className="font-semibold text-white truncate">{item.prod_name || item.article_id}</div>
+                  <div className="text-xs text-slate-400 mt-1 truncate">
+                    {item.department_name} · {item.product_group_name}
+                  </div>
+                  <div className="mt-2.5 flex items-center justify-between text-xs">
+                    <span className="font-mono text-blue-300">Price: {item.price.toFixed(3)}</span>
+                    <span className="text-slate-500 font-mono">ID {item.article_id}</span>
+                  </div>
                 </div>
               </button>
             ))}
