@@ -2,6 +2,8 @@
 
 Real-time e-commerce retrieval and ranking engine built on **PyTorch Two-Tower**, **ONNX Runtime**, **Qdrant (HNSW)**, **Redis**, **LightGBM (`lambdarank`)**, **FastAPI**, and a **Next.js Pipeline Inspector**.
 
+![NextPick Storefront & Pipeline Inspector](docs/inspector.png)
+
 ---
 
 ## Architecture
