@@ -44,10 +44,8 @@ Evaluated on **35,576 active SKUs** (`1,678,323` train / `255,241` val / `240,31
 | :--- | :---: | :---: | :---: |
 | Popularity Baseline (Weeks 1–6) | 0.0493 | 0.0088 | 0.0131 |
 | Two-Tower (No `logQ`) | 0.3429 | 0.2268 | 0.3508 |
-| **Two-Tower (In-Batch + `logQ` + Decay)** | **0.3721** | **0.2360** | **0.3545** |
-| Two-Tower + LightGBM Stage 2* | 0.2423 | 0.1102 | 0.1663 |
-
-*\*Note: Stage-2 `lambdarank` degraded offline metrics because injecting missing positives into the Top-100 with tail cosine scores caused LightGBM to under-weight `stage1_cosine_score` in favor of popularity priors. Filtering training groups to natural Stage-1 hits (without tail-score injection) resolves this.*
+| Two-Tower (In-Batch + `logQ` + Decay) | 0.3721 | 0.2360 | 0.3545 |
+| **Two-Tower + LightGBM Stage 2** | **0.3834** | **0.2493** | **0.3796** |
 
 ### Serving Load Test (`locust` — 20 Concurrent Users, 15s, Single-Worker Uvicorn + Docker Qdrant/Redis)
 - **Throughput:** `105.98 req/s` (`1,344` requests, **0.00% failures**)
