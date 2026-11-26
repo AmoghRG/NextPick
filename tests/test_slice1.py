@@ -9,9 +9,21 @@ import duckdb
 import pandas as pd
 import pytest
 
+from src.baselines.classical import (
+    fit_item_cooccurrence,
+    recommend_item_knn,
+    recommend_repurchase,
+)
 from src.baselines.popularity import evaluate_popularity_baseline
 from src.data.temporal_split import SplitConfig, build_temporal_split
-from src.eval.metrics import mrr_at_k, ndcg_at_k, recall_at_k
+from src.eval.metrics import (
+    catalog_coverage_at_k,
+    evaluate_recommendations,
+    mean_popularity_at_k,
+    mrr_at_k,
+    ndcg_at_k,
+    recall_at_k,
+)
 
 
 def _make_synthetic_hm(tmp_path: Path) -> tuple[Path, Path]:
@@ -116,3 +128,39 @@ def test_popularity_baseline_runs(tmp_path: Path) -> None:
     assert 0.0 <= metrics["recall@5"] <= 1.0
     assert 0.0 <= metrics["ndcg@5"] <= 1.0
     assert 0.0 <= metrics["mrr@5"] <= 1.0
+
+
+def test_beyond_accuracy_metrics_and_classical_baselines() -> None:
+    gt = {"u1": {"a", "b"}, "u2": {"c"}}
+    preds = {"u1": ["a", "d"], "u2": ["c", "d"]}
+    item_counts = {"a": 10, "b": 20, "c": 30, "d": 100}
+
+    assert catalog_coverage_at_k(preds, catalog_size=4, k=2) == pytest.approx(0.75)
+    assert mean_popularity_at_k(preds, item_counts, k=2) == pytest.approx((10 + 100 + 30 + 100) / 4)
+
+    summary = evaluate_recommendations(
+        gt, preds, recall_k=2, ndcg_k=2, mrr_k=2, catalog_size=4, item_counts=item_counts
+    )
+    assert summary["coverage@2"] == pytest.approx(0.75)
+    assert summary["mean_popularity@2"] == pytest.approx(60.0)
+
+    # Repurchase ranks most-recent/frequent history first and backfills unseen popular items
+    rep = recommend_repurchase(["art_2", "art_1", "art_2"], ["art_9", "art_2", "art_8"], k=4)
+    assert rep == ["art_2", "art_1", "art_9", "art_8"]
+
+    # ItemKNN co-visitation on same-day baskets
+    train_df = pd.DataFrame(
+        [
+            {"customer_id": "c1", "t_dat": "2020-09-01", "article_id": "A"},
+            {"customer_id": "c1", "t_dat": "2020-09-01", "article_id": "B"},
+            {"customer_id": "c2", "t_dat": "2020-09-02", "article_id": "A"},
+            {"customer_id": "c2", "t_dat": "2020-09-02", "article_id": "B"},
+            {"customer_id": "c3", "t_dat": "2020-09-03", "article_id": "A"},
+            {"customer_id": "c3", "t_dat": "2020-09-03", "article_id": "C"},
+        ]
+    )
+    neighbors = fit_item_cooccurrence(train_df, max_neighbors=5, min_cooccurrence=2)
+    assert "A" in neighbors
+    assert neighbors["A"][0][0] == "B"
+    recs = recommend_item_knn(["A"], neighbors, ["C", "D"], k=3)
+    assert recs == ["B", "C", "D"]
