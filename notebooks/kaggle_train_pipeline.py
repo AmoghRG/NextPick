@@ -26,7 +26,16 @@ import torch
 from sentence_transformers import SentenceTransformer
 from torch.utils.data import DataLoader, Dataset
 
-from src.models.stage2_features import compute_stage2_features_for_candidates
+from src.baselines.classical import (
+    fit_item_cooccurrence,
+    recommend_item_knn,
+    recommend_repurchase,
+)
+from src.eval.metrics import evaluate_recommendations
+from src.models.stage2_features import (
+    STAGE2_FEATURE_NAMES,
+    compute_stage2_features_for_candidates,
+)
 from src.models.two_tower import (
     ItemTower,
     UserTower,
@@ -163,31 +172,71 @@ def step2_precompute_minilm(catalog_df: pd.DataFrame) -> np.ndarray:
     return embs.astype(np.float32)
 
 
-def eval_ranked_lists(gt_by_user: dict[str, set[str]], preds_by_user: dict[str, list[str]]) -> dict[str, float]:
-    users = [u for u, gt in gt_by_user.items() if gt]
-    recalls, ndcgs, mrrs = [], [], []
-    for u in users:
-        gt = gt_by_user[u]
-        preds = preds_by_user.get(u, [])
-        recalls.append(sum(1 for x in preds[:50] if x in gt) / len(gt))
-        dcg = sum(1.0 / math.log2(i + 2) for i, x in enumerate(preds[:10]) if x in gt)
-        idcg = sum(1.0 / math.log2(i + 2) for i in range(min(len(gt), 10)))
-        ndcgs.append(dcg / idcg if idcg > 0 else 0.0)
-        mrr = next((1.0 / (i + 1) for i, x in enumerate(preds[:10]) if x in gt), 0.0)
-        mrrs.append(mrr)
-    return {
-        "recall@50": float(np.mean(recalls)),
-        "ndcg@10": float(np.mean(ndcgs)),
-        "mrr@10": float(np.mean(mrrs)),
-    }
+def eval_ranked_lists(
+    gt_by_user: dict[str, set[str]],
+    preds_by_user: dict[str, list[str]],
+    catalog_size: int | None = None,
+    item_counts: dict[str, int] | None = None,
+) -> dict[str, float]:
+    return evaluate_recommendations(
+        gt_by_user,
+        preds_by_user,
+        recall_k=50,
+        ndcg_k=10,
+        mrr_k=10,
+        catalog_size=catalog_size,
+        item_counts=item_counts,
+    )
 
 
-def step3_popularity_baseline(train_df: pd.DataFrame, test_df: pd.DataFrame) -> dict[str, float]:
+def step3_popularity_baseline(
+    train_df: pd.DataFrame,
+    test_df: pd.DataFrame,
+    catalog_size: int,
+    item_counts: dict[str, int],
+) -> dict[str, float]:
     top50 = train_df["article_id"].value_counts().head(50).index.tolist()
     gt = test_df.groupby("customer_id")["article_id"].apply(set).to_dict()
     preds = {u: top50 for u in gt}
-    metrics = eval_ranked_lists(gt, preds)
+    metrics = eval_ranked_lists(gt, preds, catalog_size=catalog_size, item_counts=item_counts)
     print("Popularity Baseline (Week 8 Test):", metrics)
+    return metrics
+
+
+def step3b_repurchase_baseline(
+    train_df: pd.DataFrame,
+    test_df: pd.DataFrame,
+    catalog_size: int,
+    item_counts: dict[str, int],
+) -> dict[str, float]:
+    top50 = train_df["article_id"].value_counts().head(50).index.tolist()
+    test_first = test_df.sort_values(["t_dat", "row_id"]).groupby("customer_id").head(1)
+    preds = {
+        row.customer_id: recommend_repurchase(list(reversed(row.hist_article_ids)), top50, k=50)
+        for row in test_first.itertuples()
+    }
+    gt = test_df.groupby("customer_id")["article_id"].apply(set).to_dict()
+    metrics = eval_ranked_lists(gt, preds, catalog_size=catalog_size, item_counts=item_counts)
+    print("User Repurchase Baseline (Week 8 Test):", metrics)
+    return metrics
+
+
+def step3c_item_knn_baseline(
+    train_df: pd.DataFrame,
+    test_df: pd.DataFrame,
+    catalog_size: int,
+    item_counts: dict[str, int],
+) -> dict[str, float]:
+    top50 = train_df["article_id"].value_counts().head(50).index.tolist()
+    neighbors = fit_item_cooccurrence(train_df, max_neighbors=50, min_cooccurrence=2)
+    test_first = test_df.sort_values(["t_dat", "row_id"]).groupby("customer_id").head(1)
+    preds = {
+        row.customer_id: recommend_item_knn(list(reversed(row.hist_article_ids)), neighbors, top50, k=50)
+        for row in test_first.itertuples()
+    }
+    gt = test_df.groupby("customer_id")["article_id"].apply(set).to_dict()
+    metrics = eval_ranked_lists(gt, preds, catalog_size=catalog_size, item_counts=item_counts)
+    print("ItemKNN Co-Visitation Baseline (Week 8 Test):", metrics)
     return metrics
 
 
@@ -355,7 +404,8 @@ def step4_train_two_tower(
     top_ids, _ = retrieve_topk_for_df(user_tower, item_embs, test_first, art_to_idx, idx_to_art, top_k=50)
     gt = test_df.groupby("customer_id")["article_id"].apply(set).to_dict()
     preds = dict(zip(test_first["customer_id"], top_ids))
-    metrics = eval_ranked_lists(gt, preds)
+    item_counts = dict(zip(catalog_df["article_id"], catalog_df["train_tx_count"]))
+    metrics = eval_ranked_lists(gt, preds, catalog_size=len(catalog_df), item_counts=item_counts)
     print(f"Two-Tower (logQ={apply_logq}) Week 8 Test:", metrics)
     return user_tower, item_tower, item_embs, metrics
 
@@ -385,6 +435,7 @@ def step5_stage2_lightgbm(
 
         cands = [
             {
+                "article_id": aid,
                 "stage1_cosine_score": sc,
                 "price": cat_lookup[aid]["avg_price"],
                 "department_name": cat_lookup[aid]["department_name"],
@@ -399,6 +450,7 @@ def step5_stage2_lightgbm(
             list(reversed(row.hist_groups)),
             row.sales_channel_id,
             cands,
+            hist_article_ids=list(reversed(row.hist_article_ids)),
         )
         X_rows.append(feats)
         y_rows.extend([1 if aid == gt_item else 0 for aid in cand_ids])
@@ -422,6 +474,17 @@ def step5_stage2_lightgbm(
     )
     ranker.fit(X_train, y_train, group=groups)
     ranker.booster_.save_model(str(ART_DIR / "lgbm_ranker.txt"))
+    gain_importance = {
+        name: float(val)
+        for name, val in zip(
+            STAGE2_FEATURE_NAMES,
+            ranker.booster_.feature_importance(importance_type="gain"),
+        )
+    }
+    print(
+        "Stage-2 LightGBM Gain Importance:",
+        dict(sorted(gain_importance.items(), key=lambda x: -x[1])),
+    )
 
     # Strict unmodified future-horizon evaluation at user's FIRST Week 8 interaction
     test_first = test_df.sort_values(["t_dat", "row_id"]).groupby("customer_id").head(1)
@@ -431,6 +494,7 @@ def step5_stage2_lightgbm(
     for row, cand_ids, cand_scores in zip(test_first.itertuples(), test_ids, test_scores):
         cands = [
             {
+                "article_id": aid,
                 "stage1_cosine_score": sc,
                 "price": cat_lookup[aid]["avg_price"],
                 "department_name": cat_lookup[aid]["department_name"],
@@ -445,15 +509,17 @@ def step5_stage2_lightgbm(
             list(reversed(row.hist_groups)),
             row.sales_channel_id,
             cands,
+            hist_article_ids=list(reversed(row.hist_article_ids)),
         )
         lgb_scores = ranker.predict(feats)
         order = np.argsort(-lgb_scores)
         preds_by_user[row.customer_id] = [cand_ids[idx] for idx in order]
 
     gt = test_df.groupby("customer_id")["article_id"].apply(set).to_dict()
-    metrics = eval_ranked_lists(gt, preds_by_user)
+    item_counts = dict(zip(catalog_df["article_id"], catalog_df["train_tx_count"]))
+    metrics = eval_ranked_lists(gt, preds_by_user, catalog_size=len(catalog_df), item_counts=item_counts)
     print("Two-Tower + LightGBM Stage 2 (Week 8 Test):", metrics)
-    return metrics
+    return metrics, gain_importance
 
 
 def run_all() -> None:
@@ -464,7 +530,12 @@ def run_all() -> None:
     val_df = pd.read_parquet(WORK_DIR / "val.parquet")
     test_df = pd.read_parquet(WORK_DIR / "test.parquet")
 
-    pop_metrics = step3_popularity_baseline(train_df, test_df)
+    catalog_size = len(catalog_df)
+    item_counts = dict(zip(catalog_df["article_id"], catalog_df["train_tx_count"]))
+
+    pop_metrics = step3_popularity_baseline(train_df, test_df, catalog_size, item_counts)
+    repurchase_metrics = step3b_repurchase_baseline(train_df, test_df, catalog_size, item_counts)
+    item_knn_metrics = step3c_item_knn_baseline(train_df, test_df, catalog_size, item_counts)
     minilm_vecs = step2_precompute_minilm(catalog_df)
     np.save(WORK_DIR / "minilm_item_vecs.npy", minilm_vecs)
 
@@ -481,13 +552,18 @@ def run_all() -> None:
     emb_df = pd.DataFrame({"article_id": catalog_df["article_id"], "embedding": item_embs.tolist()})
     emb_df.to_parquet(ART_DIR / "item_embeddings.parquet", index=False)
 
-    stage2_metrics = step5_stage2_lightgbm(user_tower, item_embs, val_df, test_df, catalog_df)
+    stage2_metrics, gain_importance = step5_stage2_lightgbm(
+        user_tower, item_embs, val_df, test_df, catalog_df
+    )
 
     ablation = {
         "popularity_baseline": pop_metrics,
+        "repurchase_baseline": repurchase_metrics,
+        "item_knn_baseline": item_knn_metrics,
         "two_tower_no_logq": naive_metrics,
         "two_tower_logq_decay": logq_metrics,
         "two_tower_plus_lightgbm": stage2_metrics,
+        "stage2_feature_importance_gain": gain_importance,
     }
     (ART_DIR / "ablation_metrics.json").write_text(json.dumps(ablation, indent=2))
     print("All Kaggle artifacts & ablation metrics saved to ./artifacts/")

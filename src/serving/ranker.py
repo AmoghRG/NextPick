@@ -1,4 +1,4 @@
-"""Stage-2 LightGBM lambdarank scorer using the shared 9 zero-skew features."""
+"""Stage-2 LightGBM lambdarank scorer using the shared 13 zero-skew features."""
 
 from __future__ import annotations
 
@@ -35,6 +35,7 @@ class Stage2Ranker:
         if not candidates:
             return []
 
+        hist_article_ids = [e.article_id for e in history]
         hist_prices = [e.price for e in history]
         hist_depts = [e.department_name for e in history]
         hist_groups = [e.product_group_name for e in history]
@@ -45,10 +46,13 @@ class Stage2Ranker:
             hist_groups=hist_groups,
             sales_channel_id=sales_channel_id,
             candidates=candidates,
+            hist_article_ids=hist_article_ids,
         )
 
         if self._booster is not None:
-            scores = self._booster.predict(feats)
+            expected_features = self._booster.num_feature()
+            model_feats = feats[:, :expected_features] if expected_features < feats.shape[1] else feats
+            scores = self._booster.predict(model_feats)
         else:
             # Bounded heuristic fallback (tanh keeps price penalty within [0, 0.3] regardless of price scale)
             scores = feats[:, 0] + 0.05 * np.tanh(feats[:, 4]) - 0.3 * np.tanh(feats[:, 3])
