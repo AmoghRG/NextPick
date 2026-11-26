@@ -107,6 +107,19 @@ def fit_item_cooccurrence(
     return dict(neighbors)
 
 
+def score_item_knn_candidates(
+    hist_article_ids: Sequence[str],
+    neighbors: Mapping[str, Sequence[tuple[str, float]]],
+) -> dict[str, float]:
+    """Compute recency-weighted ItemKNN co-visitation scores for all neighbor candidates."""
+    scores: dict[str, float] = defaultdict(float)
+    for step, aid in enumerate(hist_article_ids):
+        decay = 1.0 / (step + 1)
+        for nbr, sim in neighbors.get(str(aid), ()):
+            scores[nbr] += decay * sim
+    return dict(scores)
+
+
 def recommend_item_knn(
     hist_article_ids: Sequence[str],
     neighbors: Mapping[str, Sequence[tuple[str, float]]],
@@ -114,10 +127,6 @@ def recommend_item_knn(
     k: int = 50,
 ) -> list[str]:
     """Score candidate items by recency-weighted sum of ItemKNN cosine similarities."""
-    scores: dict[str, float] = defaultdict(float)
-    for step, aid in enumerate(hist_article_ids):
-        decay = 1.0 / (step + 1)
-        for nbr, sim in neighbors.get(str(aid), ()):
-            scores[nbr] += decay * sim
+    scores = score_item_knn_candidates(hist_article_ids, neighbors)
     ranked = [aid for aid, _ in sorted(scores.items(), key=lambda x: (-x[1], x[0]))]
     return _backfill_popular(ranked, fallback_popular, k)

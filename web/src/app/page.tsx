@@ -42,6 +42,7 @@ interface RecommendResponse {
   session_id: string;
   mode: string;
   ranker_mode?: string;
+  is_synthetic_demo?: boolean;
   history_len: number;
   items: RecommendedItem[];
   latency_ms: LatencyBreakdown;
@@ -301,11 +302,13 @@ export default function HomePage() {
               </span>
             </div>
 
-            {(!apiOnline || (data?.ranker_mode && data.ranker_mode !== "trained_lightgbm")) && (
+            {(!apiOnline || data?.is_synthetic_demo || (data?.ranker_mode && data.ranker_mode !== "trained_lightgbm")) && (
               <div className="mb-3 rounded-lg bg-amber-950/60 border border-amber-700/50 px-3 py-1.5 text-[11px] font-mono text-amber-200">
-                {apiOnline
-                  ? "Heuristic fallback active (trained LightGBM model not loaded)."
-                  : "Offline preview mode — showing static seed items (API unreachable)."}
+                {!apiOnline
+                  ? "Offline preview mode — showing static seed items (API unreachable)."
+                  : data?.is_synthetic_demo
+                  ? "SYNTHETIC DEMO — RANDOM EMBEDDINGS / UNTRAINED MODEL (heuristic fallback)."
+                  : "Heuristic fallback active (trained LightGBM model not loaded)."}
               </div>
             )}
 

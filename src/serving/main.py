@@ -38,11 +38,13 @@ class AppServices:
         retriever: Stage1Retriever,
         ranker: Stage2Ranker,
         trending_fallback: list[dict],
+        is_synthetic_demo: bool = False,
     ) -> None:
         self.session_store = session_store
         self.retriever = retriever
         self.ranker = ranker
         self.trending_fallback = trending_fallback
+        self.is_synthetic_demo = is_synthetic_demo
 
 
 def build_default_services() -> AppServices:
@@ -98,12 +100,14 @@ def build_default_services() -> AppServices:
 
     onnx_path = art_dir / "user_tower.onnx"
     lgbm_path = art_dir / "lgbm_ranker.txt"
+    is_synthetic_demo = (art_dir / "demo_manifest.json").exists()
 
     return AppServices(
         session_store=SessionStore(r_client),
         retriever=Stage1Retriever(q_client, onnx_path, item_vectors, collection_name=COLLECTION_NAME),
         ranker=Stage2Ranker(lgbm_path),
         trending_fallback=trending,
+        is_synthetic_demo=is_synthetic_demo,
     )
 
 
@@ -148,6 +152,7 @@ def create_app(services: AppServices | None = None) -> FastAPI:
         status = "ok" if (redis_ok and not redis_inmemory and qdrant_ok and onnx_ok and lgbm_ok) else "degraded"
         return {
             "status": status,
+            "is_synthetic_demo": svc.is_synthetic_demo,
             "dependencies": {
                 "redis": "in_memory_fallback" if redis_inmemory else ("ok" if redis_ok else "down"),
                 "qdrant": "ok" if qdrant_ok else "down",
@@ -196,6 +201,7 @@ def create_app(services: AppServices | None = None) -> FastAPI:
                 "session_id": session_id,
                 "mode": "cold_start_trending",
                 "ranker_mode": svc.ranker.mode,
+                "is_synthetic_demo": svc.is_synthetic_demo,
                 "history_len": 0,
                 "items": items[:top_k],
                 "latency_ms": {
@@ -229,6 +235,7 @@ def create_app(services: AppServices | None = None) -> FastAPI:
             "session_id": session_id,
             "mode": "two_stage_personalized",
             "ranker_mode": svc.ranker.mode,
+            "is_synthetic_demo": svc.is_synthetic_demo,
             "history_len": len(history),
             "items": ranked,
             "latency_ms": {

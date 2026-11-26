@@ -30,6 +30,7 @@ from src.baselines.classical import (
     fit_item_cooccurrence,
     recommend_item_knn,
     recommend_repurchase,
+    score_item_knn_candidates,
 )
 from src.eval.metrics import evaluate_recommendations
 from src.models.stage2_features import (
@@ -226,7 +227,7 @@ def step3c_item_knn_baseline(
     test_df: pd.DataFrame,
     catalog_size: int,
     item_counts: dict[str, int],
-) -> dict[str, float]:
+) -> tuple[dict[str, float], dict[str, list[tuple[str, float]]]]:
     top50 = train_df["article_id"].value_counts().head(50).index.tolist()
     neighbors = fit_item_cooccurrence(train_df, max_neighbors=50, min_cooccurrence=2)
     test_first = test_df.sort_values(["t_dat", "row_id"]).groupby("customer_id").head(1)
@@ -237,7 +238,7 @@ def step3c_item_knn_baseline(
     gt = test_df.groupby("customer_id")["article_id"].apply(set).to_dict()
     metrics = eval_ranked_lists(gt, preds, catalog_size=catalog_size, item_counts=item_counts)
     print("ItemKNN Co-Visitation Baseline (Week 8 Test):", metrics)
-    return metrics
+    return metrics, neighbors
 
 
 def _encode_catalog_features(catalog_df: pd.DataFrame) -> dict[str, np.ndarray]:
@@ -318,21 +319,26 @@ def retrieve_topk_for_df(
     idx_to_art: list[str],
     top_k: int = 100,
     batch_size: int = 512,
-) -> tuple[list[list[str]], list[list[float]]]:
+    return_user_embs: bool = False,
+) -> tuple[list[list[str]], list[list[float]]] | tuple[list[list[str]], list[list[float]], np.ndarray]:
     """Batched Stage-1 retrieval returning Top-K article_ids and cosine scores per row."""
     user_tower.eval()
     ds = InteractionDataset(df, art_to_idx)
     loader = DataLoader(ds, batch_size=batch_size, shuffle=False)
     item_tensor = torch.from_numpy(item_embs).to(DEVICE)
 
-    all_ids, all_scores = [], []
+    all_ids, all_scores, all_u_embs = [], [], []
     for hist_idx, hist_mask, chan, _ in loader:
         hist_vecs = item_tensor[hist_idx.to(DEVICE)]
         u_emb = user_tower(hist_vecs, hist_mask.to(DEVICE), chan.to(DEVICE))
+        if return_user_embs:
+            all_u_embs.append(u_emb.cpu().numpy())
         scores, indices = torch.topk(u_emb @ item_tensor.T, k=top_k, dim=-1)
         for row_idx, row_sc in zip(indices.cpu().numpy(), scores.cpu().numpy()):
             all_ids.append([idx_to_art[j] for j in row_idx])
             all_scores.append(row_sc.tolist())
+    if return_user_embs:
+        return all_ids, all_scores, np.vstack(all_u_embs).astype(np.float32)
     return all_ids, all_scores
 
 
@@ -361,6 +367,9 @@ def step4_train_two_tower(
     item_tower = ItemTower().to(DEVICE)
     user_tower = UserTower().to(DEVICE)
     opt = torch.optim.AdamW(list(item_tower.parameters()) + list(user_tower.parameters()), lr=1e-3, weight_decay=1e-4)
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=epochs)
+    use_amp = DEVICE == "cuda"
+    scaler = torch.amp.GradScaler("cuda", enabled=use_amp)
 
     ds = InteractionDataset(train_df, art_to_idx)
     if len(ds) == 0:
@@ -377,24 +386,27 @@ def step4_train_two_tower(
             hist_idx = hist_idx.to(DEVICE)
             target_idx = target_idx.to(DEVICE)
 
-            # Encode positive items and historical items through ItemTower
-            flat_hist = hist_idx.view(-1)
-            hist_vecs = item_tower(
-                minilm_t[flat_hist], group_t[flat_hist], dept_t[flat_hist], colour_t[flat_hist], price_t[flat_hist]
-            ).view(hist_idx.size(0), MAX_SEQ_LEN, EMBED_DIM)
-
-            pos_vecs = item_tower(
-                minilm_t[target_idx], group_t[target_idx], dept_t[target_idx], colour_t[target_idx], price_t[target_idx]
-            )
-            u_vecs = user_tower(hist_vecs, hist_mask.to(DEVICE), chan.to(DEVICE))
-            loss = in_batch_logq_loss(
-                u_vecs, pos_vecs, target_idx, log_q_table[target_idx], tau=0.07, apply_logq=apply_logq
-            )
-
             opt.zero_grad()
-            loss.backward()
-            opt.step()
+            with torch.amp.autocast("cuda", enabled=use_amp):
+                # Encode positive items and historical items through ItemTower
+                flat_hist = hist_idx.view(-1)
+                hist_vecs = item_tower(
+                    minilm_t[flat_hist], group_t[flat_hist], dept_t[flat_hist], colour_t[flat_hist], price_t[flat_hist]
+                ).view(hist_idx.size(0), MAX_SEQ_LEN, EMBED_DIM)
+
+                pos_vecs = item_tower(
+                    minilm_t[target_idx], group_t[target_idx], dept_t[target_idx], colour_t[target_idx], price_t[target_idx]
+                )
+                u_vecs = user_tower(hist_vecs, hist_mask.to(DEVICE), chan.to(DEVICE))
+                loss = in_batch_logq_loss(
+                    u_vecs, pos_vecs, target_idx, log_q_table[target_idx], tau=0.07, apply_logq=apply_logq
+                )
+
+            scaler.scale(loss).backward()
+            scaler.step(opt)
+            scaler.update()
             total_loss += loss.item()
+        scheduler.step()
         print(f"[TwoTower logQ={apply_logq}] Epoch {epoch}/{epochs} loss={total_loss / len(loader):.4f}")
 
     item_embs = compute_catalog_embeddings(item_tower, minilm_vecs, cat_feats)
@@ -410,54 +422,95 @@ def step4_train_two_tower(
     return user_tower, item_tower, item_embs, metrics
 
 
+def _build_multichannel_candidates(
+    hist_article_ids: list[str],
+    ann_ids: list[str],
+    ann_scores: list[float],
+    u_emb: np.ndarray,
+    item_embs: np.ndarray,
+    art_to_idx: dict[str, int],
+    cat_lookup: dict,
+    knn_neighbors: dict[str, list[tuple[str, float]]],
+    top_popular: list[str],
+) -> tuple[list[str], list[dict]]:
+    """Merge Two-Tower ANN (Top-80) + Repurchase (Top-20) + ItemKNN (Top-20) into one candidate pool."""
+    knn_scores = score_item_knn_candidates(hist_article_ids, knn_neighbors)
+    rep_ids = recommend_repurchase(hist_article_ids, top_popular, k=20)
+    knn_top = [aid for aid, _ in sorted(knn_scores.items(), key=lambda x: (-x[1], x[0]))[:20]]
+
+    score_map = dict(zip(ann_ids, ann_scores))
+    merged_ids: list[str] = []
+    seen: set[str] = set()
+    for aid in ann_ids + rep_ids + knn_top:
+        if aid not in seen and aid in cat_lookup:
+            seen.add(aid)
+            merged_ids.append(aid)
+
+    cands: list[dict] = []
+    for aid in merged_ids:
+        cos_sc = score_map.get(aid)
+        if cos_sc is None:
+            idx = art_to_idx.get(aid)
+            cos_sc = float(u_emb @ item_embs[idx]) if idx is not None else 0.0
+        meta = cat_lookup[aid]
+        cands.append(
+            {
+                "article_id": aid,
+                "stage1_cosine_score": cos_sc,
+                "price": meta["avg_price"],
+                "department_name": meta["department_name"],
+                "product_group_name": meta["product_group_name"],
+                "train_tx_count": meta["train_tx_count"],
+                "item_knn_score": float(knn_scores.get(aid, 0.0)),
+            }
+        )
+    return merged_ids, cands
+
+
 def step5_stage2_lightgbm(
     user_tower: UserTower,
     item_embs: np.ndarray,
     val_df: pd.DataFrame,
     test_df: pd.DataFrame,
     catalog_df: pd.DataFrame,
-    max_val_queries: int = 25000,
-) -> dict[str, float]:
-    """Mine Stage-1 Top-100 hard negatives, train lambdarank on Week 7 Val, evaluate unmodified on Week 8."""
+    knn_neighbors: dict[str, list[tuple[str, float]]],
+    top_popular: list[str],
+    max_val_queries: int = 30000,
+) -> tuple[dict[str, float], dict[str, float]]:
+    """Mine multi-channel Stage-1 candidates, train lambdarank on Week 7 Val, evaluate on Week 8."""
     idx_to_art = catalog_df["article_id"].tolist()
     art_to_idx = {a: i for i, a in enumerate(idx_to_art)}
     cat_lookup = catalog_df.set_index("article_id").to_dict(orient="index")
 
     val_sample = val_df.sample(n=min(max_val_queries, len(val_df)), random_state=42).reset_index(drop=True)
-    val_ids, val_scores = retrieve_topk_for_df(user_tower, item_embs, val_sample, art_to_idx, idx_to_art, top_k=100)
+    val_ids, val_scores, val_u_embs = retrieve_topk_for_df(
+        user_tower, item_embs, val_sample, art_to_idx, idx_to_art, top_k=80, return_user_embs=True
+    )
 
     X_rows, y_rows, groups = [], [], []
-    for row, cand_ids, cand_scores in zip(val_sample.itertuples(), val_ids, val_scores):
+    for row, ann_ids, ann_scores, u_emb in zip(val_sample.itertuples(), val_ids, val_scores, val_u_embs):
         gt_item = row.article_id
-        # Keep only natural Stage-1 Top-100 hits so stage1_cosine_score distribution stays uncorrupted
+        hist_arts = list(reversed(row.hist_article_ids))
+        cand_ids, cands = _build_multichannel_candidates(
+            hist_arts, ann_ids, ann_scores, u_emb, item_embs, art_to_idx, cat_lookup, knn_neighbors, top_popular
+        )
         if gt_item not in cand_ids:
             continue
 
-        cands = [
-            {
-                "article_id": aid,
-                "stage1_cosine_score": sc,
-                "price": cat_lookup[aid]["avg_price"],
-                "department_name": cat_lookup[aid]["department_name"],
-                "product_group_name": cat_lookup[aid]["product_group_name"],
-                "train_tx_count": cat_lookup[aid]["train_tx_count"],
-            }
-            for aid, sc in zip(cand_ids, cand_scores)
-        ]
         feats = compute_stage2_features_for_candidates(
             list(reversed(row.hist_prices)),
             list(reversed(row.hist_departments)),
             list(reversed(row.hist_groups)),
             row.sales_channel_id,
             cands,
-            hist_article_ids=list(reversed(row.hist_article_ids)),
+            hist_article_ids=hist_arts,
         )
         X_rows.append(feats)
         y_rows.extend([1 if aid == gt_item else 0 for aid in cand_ids])
         groups.append(len(cand_ids))
 
     print(
-        f"Stage-2 Val Recall@100: {len(groups) / len(val_sample):.4f} "
+        f"Stage-2 Multi-Channel Val Recall@~100: {len(groups) / len(val_sample):.4f} "
         f"({len(groups)}/{len(val_sample)} queries retained)"
     )
     X_train = np.vstack(X_rows)
@@ -467,9 +520,9 @@ def step5_stage2_lightgbm(
         objective="lambdarank",
         metric="ndcg",
         ndcg_eval_at=[10],
-        n_estimators=300,
+        n_estimators=400,
         learning_rate=0.05,
-        num_leaves=31,
+        num_leaves=63,
         random_state=42,
     )
     ranker.fit(X_train, y_train, group=groups)
@@ -488,28 +541,23 @@ def step5_stage2_lightgbm(
 
     # Strict unmodified future-horizon evaluation at user's FIRST Week 8 interaction
     test_first = test_df.sort_values(["t_dat", "row_id"]).groupby("customer_id").head(1)
-    test_ids, test_scores = retrieve_topk_for_df(user_tower, item_embs, test_first, art_to_idx, idx_to_art, top_k=100)
+    test_ids, test_scores, test_u_embs = retrieve_topk_for_df(
+        user_tower, item_embs, test_first, art_to_idx, idx_to_art, top_k=80, return_user_embs=True
+    )
 
     preds_by_user = {}
-    for row, cand_ids, cand_scores in zip(test_first.itertuples(), test_ids, test_scores):
-        cands = [
-            {
-                "article_id": aid,
-                "stage1_cosine_score": sc,
-                "price": cat_lookup[aid]["avg_price"],
-                "department_name": cat_lookup[aid]["department_name"],
-                "product_group_name": cat_lookup[aid]["product_group_name"],
-                "train_tx_count": cat_lookup[aid]["train_tx_count"],
-            }
-            for aid, sc in zip(cand_ids, cand_scores)
-        ]
+    for row, ann_ids, ann_scores, u_emb in zip(test_first.itertuples(), test_ids, test_scores, test_u_embs):
+        hist_arts = list(reversed(row.hist_article_ids))
+        cand_ids, cands = _build_multichannel_candidates(
+            hist_arts, ann_ids, ann_scores, u_emb, item_embs, art_to_idx, cat_lookup, knn_neighbors, top_popular
+        )
         feats = compute_stage2_features_for_candidates(
             list(reversed(row.hist_prices)),
             list(reversed(row.hist_departments)),
             list(reversed(row.hist_groups)),
             row.sales_channel_id,
             cands,
-            hist_article_ids=list(reversed(row.hist_article_ids)),
+            hist_article_ids=hist_arts,
         )
         lgb_scores = ranker.predict(feats)
         order = np.argsort(-lgb_scores)
@@ -532,20 +580,21 @@ def run_all() -> None:
 
     catalog_size = len(catalog_df)
     item_counts = dict(zip(catalog_df["article_id"], catalog_df["train_tx_count"]))
+    top50_popular = train_df["article_id"].value_counts().head(50).index.tolist()
 
     pop_metrics = step3_popularity_baseline(train_df, test_df, catalog_size, item_counts)
     repurchase_metrics = step3b_repurchase_baseline(train_df, test_df, catalog_size, item_counts)
-    item_knn_metrics = step3c_item_knn_baseline(train_df, test_df, catalog_size, item_counts)
+    item_knn_metrics, knn_neighbors = step3c_item_knn_baseline(train_df, test_df, catalog_size, item_counts)
     minilm_vecs = step2_precompute_minilm(catalog_df)
     np.save(WORK_DIR / "minilm_item_vecs.npy", minilm_vecs)
 
     # Ablation 1: Naive In-Batch (no logQ)
     _, _, _, naive_metrics = step4_train_two_tower(
-        train_df, test_df, catalog_df, minilm_vecs, apply_logq=False
+        train_df, test_df, catalog_df, minilm_vecs, apply_logq=False, epochs=3
     )
-    # Ablation 2: Full In-Batch + logQ + Collision Masking + Recency Decay
+    # Ablation 2: Full In-Batch + logQ + Collision Masking + Self-Attention + Recency Decay
     user_tower, _, item_embs, logq_metrics = step4_train_two_tower(
-        train_df, test_df, catalog_df, minilm_vecs, apply_logq=True
+        train_df, test_df, catalog_df, minilm_vecs, apply_logq=True, epochs=6
     )
 
     export_user_tower_onnx(user_tower, ART_DIR / "user_tower.onnx")
@@ -553,7 +602,7 @@ def run_all() -> None:
     emb_df.to_parquet(ART_DIR / "item_embeddings.parquet", index=False)
 
     stage2_metrics, gain_importance = step5_stage2_lightgbm(
-        user_tower, item_embs, val_df, test_df, catalog_df
+        user_tower, item_embs, val_df, test_df, catalog_df, knn_neighbors, top50_popular
     )
 
     ablation = {

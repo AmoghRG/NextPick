@@ -58,7 +58,7 @@ class ItemTower(nn.Module):
 
 
 class UserTower(nn.Module):
-    """Encodes a user's last-K item vectors via exponential recency-decay pooling."""
+    """Encodes a user's last-K item vectors via masked self-attention + recency-decay pooling."""
 
     def __init__(
         self,
@@ -67,8 +67,21 @@ class UserTower(nn.Module):
         embed_dim: int = 128,
         decay_lambda: float = 0.15,
         max_seq_len: int = 20,
+        num_heads: int = 4,
     ) -> None:
         super().__init__()
+        if item_dim % num_heads != 0:
+            raise ValueError(f"item_dim ({item_dim}) must be divisible by num_heads ({num_heads})")
+        self.item_dim = item_dim
+        self.num_heads = num_heads
+        self.head_dim = item_dim // num_heads
+
+        self.q_proj = nn.Linear(item_dim, item_dim)
+        self.k_proj = nn.Linear(item_dim, item_dim)
+        self.v_proj = nn.Linear(item_dim, item_dim)
+        self.attn_out = nn.Linear(item_dim, item_dim)
+        self.attn_norm = nn.LayerNorm(item_dim)
+
         self.channel_emb = nn.Embedding(num_channels, 8)
         positions = torch.arange(max_seq_len, dtype=torch.float32)
         self.register_buffer("decay_weights", torch.exp(-decay_lambda * positions))
@@ -92,10 +105,21 @@ class UserTower(nn.Module):
             hist_mask: (B, L) float/bool mask where 1.0 = valid item, 0.0 = padding.
             channel_id: (B,) integer sales channel ID.
         """
-        seq_len = hist_item_vecs.size(1)
+        bsz, seq_len, _ = hist_item_vecs.shape
+        q = self.q_proj(hist_item_vecs).view(bsz, seq_len, self.num_heads, self.head_dim).transpose(1, 2)
+        k = self.k_proj(hist_item_vecs).view(bsz, seq_len, self.num_heads, self.head_dim).transpose(1, 2)
+        v = self.v_proj(hist_item_vecs).view(bsz, seq_len, self.num_heads, self.head_dim).transpose(1, 2)
+
+        attn_scores = (q @ k.transpose(-2, -1)) / (self.head_dim ** 0.5)
+        key_valid = (hist_mask > 0.5).unsqueeze(1).unsqueeze(2)  # (B, 1, 1, L)
+        attn_scores = attn_scores.masked_fill(~key_valid, -1e9)
+        attn_probs = torch.softmax(attn_scores, dim=-1) * hist_mask.float().unsqueeze(1).unsqueeze(2)
+        ctx = (attn_probs @ v).transpose(1, 2).contiguous().view(bsz, seq_len, self.item_dim)
+        seq_repr = self.attn_norm(hist_item_vecs + self.attn_out(ctx))
+
         weights = self.decay_weights[:seq_len].unsqueeze(0) * hist_mask.float()
         denom = weights.sum(dim=1, keepdim=True).clamp(min=1e-6)
-        pooled = (hist_item_vecs * weights.unsqueeze(-1)).sum(dim=1) / denom
+        pooled = (seq_repr * weights.unsqueeze(-1)).sum(dim=1) / denom
 
         x = torch.cat([pooled, self.channel_emb(channel_id)], dim=-1)
         return F.normalize(self.mlp(x), p=2, dim=-1)
