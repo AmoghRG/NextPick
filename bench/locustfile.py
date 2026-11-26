@@ -1,4 +1,4 @@
-"""Locust load test for NextPick /event and /recommend endpoints (target p95 < 25ms)."""
+"""Locust load test for NextPick /event and /recommend endpoints."""
 
 from __future__ import annotations
 

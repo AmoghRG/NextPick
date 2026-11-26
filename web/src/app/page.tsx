@@ -41,6 +41,7 @@ interface LatencyBreakdown {
 interface RecommendResponse {
   session_id: string;
   mode: string;
+  ranker_mode?: string;
   history_len: number;
   items: RecommendedItem[];
   latency_ms: LatencyBreakdown;
@@ -294,7 +295,7 @@ export default function HomePage() {
                   apiOnline ? "bg-emerald-950 text-emerald-300" : "bg-amber-950 text-amber-300"
                 }`}
               >
-                {data?.mode ?? "connecting"}
+                {data?.mode ?? "connecting"} · {data?.ranker_mode ?? (apiOnline ? "unknown" : "offline_preview")}
               </span>
             </div>
 

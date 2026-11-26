@@ -1,9 +1,10 @@
-"""Batch loader for indexing NextPick item embeddings and full metadata payloads into Qdrant."""
+"""Batch loader for indexing NextPick item embeddings and metadata payloads into Qdrant."""
 
 from __future__ import annotations
 
 import argparse
 import os
+import uuid
 from pathlib import Path
 
 import pandas as pd
@@ -12,11 +13,17 @@ from qdrant_client.models import (
     Distance,
     HnswConfigDiff,
     PayloadSchemaType,
+    PointIdsList,
     PointStruct,
     VectorParams,
 )
 
 COLLECTION_NAME = "nextpick_items"
+
+
+def stable_point_id(article_id: str) -> str:
+    """Deterministic UUIDv5 derived from article_id so re-indexing never shifts IDs."""
+    return str(uuid.uuid5(uuid.NAMESPACE_DNS, f"nextpick:{article_id}"))
 
 
 def build_image_url(article_id: str) -> str:
@@ -50,9 +57,34 @@ def ensure_collection(
         vectors_config=VectorParams(size=vector_size, distance=Distance.COSINE),
         hnsw_config=HnswConfigDiff(m=16, ef_construct=100),
     )
-    client.create_payload_index(collection, "in_stock", PayloadSchemaType.BOOL)
     client.create_payload_index(collection, "product_group_name", PayloadSchemaType.KEYWORD)
     client.create_payload_index(collection, "price", PayloadSchemaType.FLOAT)
+
+
+def _delete_stale_points(client: QdrantClient, collection: str, valid_ids: set[str]) -> int:
+    """Remove points in Qdrant that are no longer present in the current catalog."""
+    stale_ids: list[str] = []
+    offset = None
+    while True:
+        points, next_offset = client.scroll(
+            collection_name=collection,
+            limit=1000,
+            offset=offset,
+            with_payload=False,
+            with_vectors=False,
+        )
+        for pt in points:
+            pid = str(pt.id)
+            if pid not in valid_ids:
+                stale_ids.append(pid)
+        if next_offset is None:
+            break
+        offset = next_offset
+
+    for start in range(0, len(stale_ids), 512):
+        batch = stale_ids[start : start + 512]
+        client.delete(collection_name=collection, points_selector=PointIdsList(points=batch))
+    return len(stale_ids)
 
 
 def load_catalog_to_qdrant(
@@ -62,6 +94,7 @@ def load_catalog_to_qdrant(
     collection: str = COLLECTION_NAME,
     batch_size: int = 256,
     recreate: bool = False,
+    prune_stale: bool = True,
 ) -> int:
     """Join catalog metadata with 128-d embeddings and non-destructively upsert into Qdrant."""
     cat_df = pd.read_parquet(catalog_parquet)
@@ -75,10 +108,14 @@ def load_catalog_to_qdrant(
     ensure_collection(client, collection=collection, vector_size=vec_size, recreate=recreate)
 
     total = 0
+    valid_ids: set[str] = set()
     points: list[PointStruct] = []
-    for idx, row in enumerate(merged.itertuples(index=False)):
+    for row in merged.itertuples(index=False):
+        art_id = str(row.article_id)
+        pid = stable_point_id(art_id)
+        valid_ids.add(pid)
         payload = {
-            "article_id": str(row.article_id),
+            "article_id": art_id,
             "prod_name": str(getattr(row, "prod_name", "")),
             "product_type_name": str(getattr(row, "product_type_name", "unknown")),
             "product_group_name": str(getattr(row, "product_group_name", "unknown")),
@@ -86,12 +123,11 @@ def load_catalog_to_qdrant(
             "colour_group_name": str(getattr(row, "colour_group_name", "unknown")),
             "price": float(getattr(row, "avg_price", 0.0)),
             "train_tx_count": int(getattr(row, "train_tx_count", 0)),
-            "image_url": str(getattr(row, "image_url", "")) or build_image_url(str(row.article_id)),
-            "in_stock": bool(getattr(row, "in_stock", True)),
+            "image_url": str(getattr(row, "image_url", "")) or build_image_url(art_id),
         }
         points.append(
             PointStruct(
-                id=idx + 1,
+                id=pid,
                 vector=[float(x) for x in row.embedding],
                 payload=payload,
             )
@@ -105,6 +141,9 @@ def load_catalog_to_qdrant(
         client.upsert(collection_name=collection, points=points)
         total += len(points)
 
+    if prune_stale and not recreate:
+        _delete_stale_points(client, collection, valid_ids)
+
     return total
 
 
@@ -115,6 +154,7 @@ def main() -> None:
     parser.add_argument("--catalog", type=Path, default=Path("artifacts/catalog.parquet"))
     parser.add_argument("--embeddings", type=Path, default=Path("artifacts/item_embeddings.parquet"))
     parser.add_argument("--recreate", action="store_true", help="Drop and recreate collection before indexing.")
+    parser.add_argument("--no-prune", action="store_true", help="Skip deleting stale points not in catalog.")
     args = parser.parse_args()
 
     client = QdrantClient(
@@ -123,7 +163,9 @@ def main() -> None:
         timeout=60,
         check_compatibility=False,
     )
-    count = load_catalog_to_qdrant(client, args.catalog, args.embeddings, recreate=args.recreate)
+    count = load_catalog_to_qdrant(
+        client, args.catalog, args.embeddings, recreate=args.recreate, prune_stale=not args.no_prune
+    )
     print(f"Indexed {count} items into Qdrant collection '{COLLECTION_NAME}'.")
 
 

@@ -404,6 +404,10 @@ def step5_stage2_lightgbm(
         y_rows.extend([1 if aid == gt_item else 0 for aid in cand_ids])
         groups.append(len(cand_ids))
 
+    print(
+        f"Stage-2 Val Recall@100: {len(groups) / len(val_sample):.4f} "
+        f"({len(groups)}/{len(val_sample)} queries retained)"
+    )
     X_train = np.vstack(X_rows)
     y_train = np.array(y_rows, dtype=np.int32)
 

@@ -195,6 +195,7 @@ def create_app(services: AppServices | None = None) -> FastAPI:
             return {
                 "session_id": session_id,
                 "mode": "cold_start_trending",
+                "ranker_mode": svc.ranker.mode,
                 "history_len": 0,
                 "items": items[:top_k],
                 "latency_ms": {
@@ -227,6 +228,7 @@ def create_app(services: AppServices | None = None) -> FastAPI:
         return {
             "session_id": session_id,
             "mode": "two_stage_personalized",
+            "ranker_mode": svc.ranker.mode,
             "history_len": len(history),
             "items": ranked,
             "latency_ms": {

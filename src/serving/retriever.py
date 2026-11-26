@@ -81,9 +81,7 @@ class Stage1Retriever:
         max_price: float | None = None,
     ) -> list[dict]:
         """Single-hop Qdrant HNSW search returning Top-K candidates with full payload."""
-        must_filters: list[FieldCondition] = [
-            FieldCondition(key="in_stock", match=MatchValue(value=True)),
-        ]
+        must_filters: list[FieldCondition] = []
         if product_group:
             must_filters.append(FieldCondition(key="product_group_name", match=MatchValue(value=product_group)))
         if max_price is not None:
@@ -92,7 +90,7 @@ class Stage1Retriever:
         res = self._qdrant.query_points(
             collection_name=self._collection,
             query=user_vector.tolist(),
-            query_filter=Filter(must=must_filters),
+            query_filter=Filter(must=must_filters) if must_filters else None,
             limit=top_k,
             with_payload=True,
         )
