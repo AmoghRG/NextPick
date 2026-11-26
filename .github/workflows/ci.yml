@@ -16,9 +16,9 @@ jobs:
           python-version: "3.12"
       - name: Install test dependencies
         run: |
-          pip install duckdb numpy pandas pyarrow pytest torch onnx onnxscript onnxruntime fastapi httpx qdrant-client redis lightgbm
-      - name: Run pytest
-        run: PYTHONPATH=. pytest -v
+          pip install duckdb numpy pandas pyarrow pytest pytest-cov torch onnx onnxscript onnxruntime fastapi httpx qdrant-client redis lightgbm
+      - name: Run pytest with coverage gate
+        run: PYTHONPATH=. pytest -v --cov=src --cov-report=term-missing --cov-fail-under=85
 
   web-build:
     runs-on: ubuntu-latest
