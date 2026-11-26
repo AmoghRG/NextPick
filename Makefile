@@ -12,7 +12,7 @@ demo:
 	PYTHONPATH=. python src/index/qdrant_loader.py
 
 api:
-	PYTHONPATH=. uvicorn src.serving.main:app --host 0.0.0.0 --port 8000
+	NEXTPICK_ALLOW_INMEMORY_REDIS=1 PYTHONPATH=. uvicorn src.serving.main:app --host 0.0.0.0 --port 8000
 
 web:
 	cd web && npm install && npm run dev
