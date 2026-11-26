@@ -138,7 +138,7 @@ def step1_temporal_split() -> dict[str, int]:
                 COALESCE(CAST(a.colour_group_name AS VARCHAR), 'unknown') AS colour_group_name,
                 COALESCE(CAST(a.department_name AS VARCHAR), 'unknown') AS department_name,
                 COALESCE(CAST(a.detail_desc AS VARCHAR), '') AS detail_desc,
-                COALESCE(AVG(w.price), 0.02) AS avg_price,
+                COALESCE(AVG(CASE WHEN w.t_dat < {train_end} THEN w.price END), 0.02) AS avg_price,
                 COUNT(CASE WHEN w.t_dat < {train_end} THEN 1 END) AS train_tx_count
             FROM raw_art a
             INNER JOIN (

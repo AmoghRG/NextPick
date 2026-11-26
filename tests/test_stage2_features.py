@@ -1,4 +1,4 @@
-"""Unit tests for the shared 13-feature Stage-2 builder."""
+"""Unit tests for the shared 14-feature Stage-2 builder."""
 
 from __future__ import annotations
 
