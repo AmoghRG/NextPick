@@ -16,6 +16,7 @@ from src.baselines.classical import (
 )
 from src.baselines.popularity import evaluate_popularity_baseline
 from src.data.temporal_split import SplitConfig, build_temporal_split
+from src.eval.diagnostics import bootstrap_ci, evaluate_candidate_pool, paired_comparison
 from src.eval.metrics import (
     catalog_coverage_at_k,
     evaluate_recommendations,
@@ -164,3 +165,27 @@ def test_beyond_accuracy_metrics_and_classical_baselines() -> None:
     assert neighbors["A"][0][0] == "B"
     recs = recommend_item_knn(["A"], neighbors, ["C", "D"], k=3)
     assert recs == ["B", "C", "D"]
+
+
+def test_diagnostics_bootstrap_paired_and_candidate_pool() -> None:
+    ci = bootstrap_ci([0.1, 0.2, 0.3, 0.4], n_boot=200, seed=42)
+    assert ci["mean"] == pytest.approx(0.25)
+    assert 0.1 <= ci["ci_low"] <= ci["mean"] <= ci["ci_high"] <= 0.4
+
+    paired = paired_comparison([0.5, 0.2, 0.0], [0.1, 0.2, 0.3])
+    assert paired["wins"] == 1
+    assert paired["ties"] == 1
+    assert paired["losses"] == 1
+    assert paired["win_rate_nonzero"] == pytest.approx(0.5)
+
+    pool = evaluate_candidate_pool(
+        gt_by_user={"u1": {"a", "b"}, "u2": {"c", "z"}},
+        ann_by_user={"u1": ["a"], "u2": ["x"]},
+        rep_by_user={"u1": ["b"], "u2": ["c"]},
+        knn_by_user={"u1": ["y"], "u2": ["x"]},
+    )
+    assert pool["candidate_hit_rate"] == pytest.approx(1.0)
+    assert pool["candidate_recall"] == pytest.approx((1.0 + 0.5) / 2.0)
+    assert pool["ann_only_hit_share"] == pytest.approx(1.0 / 3.0)
+    assert pool["rep_only_hit_share"] == pytest.approx(2.0 / 3.0)
+    assert pool["knn_only_hit_share"] == pytest.approx(0.0)
