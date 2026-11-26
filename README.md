@@ -21,7 +21,7 @@ Next.js Storefront + Pipeline Inspector
                                  Qdrant HNSW (Top-100 + with_payload=True)
                                       │
                                       ▼
-                                 LightGBM lambdarank (9 zero-skew features)
+                                 LightGBM lambdarank (13 zero-skew features)
                                       │
                                       ▼
                                  Top-10 Ranked + Rank Deltas + Latency ms
@@ -44,12 +44,20 @@ Evaluated on a **date-level temporal split** (`ORDER BY t_dat, row_id`, predicti
 
 > **Temporal evaluation limitation:** Interactions are ordered by date (`t_dat`) and a deterministic `row_id` tie-breaker. Since the H&M dataset does not contain precise intra-day timestamps, ordering among interactions on the same date is deterministic rather than true chronological order.
 
-| Model / Pipeline Stage | Recall@50 | NDCG@10 | MRR@10 |
-| :--- | :---: | :---: | :---: |
-| Popularity Baseline (Weeks 1–6) | 0.0493 | 0.0088 | 0.0131 |
-| Two-Tower (No `logQ` — collapses popular items) | 0.0036 | 0.0006 | 0.0008 |
-| Two-Tower (`In-Batch + logQ + Decay`) | 0.0711 | 0.0236 | 0.0291 |
-| **Two-Tower + LightGBM Stage 2** | **0.0773** | **0.0267** | **0.0340** |
+| Model / Pipeline Stage | Recall@50 | NDCG@10 | MRR@10 | Coverage@10 | Mean Pop@10 |
+| :--- | :---: | :---: | :---: | :---: | :---: |
+| Popularity Baseline (Weeks 1–6) | 0.0493 | 0.0088 | 0.0131 | 0.03% | 2,366.8 |
+| User Repurchase Baseline | 0.0793 | 0.0337 | 0.0426 | 60.56% | 1,802.1 |
+| ItemKNN Co-Visitation Baseline | 0.0611 | 0.0169 | 0.0222 | 44.70% | 1,208.4 |
+| Two-Tower (No `logQ` — collapses popular items) | 0.0037 | 0.0005 | 0.0007 | 81.01% | 104.7 |
+| Two-Tower (`In-Batch + logQ + Decay`) | 0.0204 | 0.0027 | 0.0038 | 39.36% | 891.4 |
+| **Two-Tower + LightGBM Stage 2 (13 features)** | **0.0259** | **0.0063** | **0.0092** | **27.62%** | **1,086.3** |
+
+> **Key takeaways from the full Week-8 evaluation (`68,984` users):**
+> - **`logQ` + Decay** lifts Two-Tower `Recall@50` by **5.5×** (`0.0037` → `0.0204`), while Stage-2 LightGBM more than doubles `NDCG@10` (`0.0027` → `0.0063`) and `MRR@10` (`0.0038` → `0.0092`).
+> - **Anti-bias & coverage:** Global Popularity covers just `0.03%` of the catalog (`Mean Pop@10 = 2,366.8`), whereas Two-Tower + LightGBM reaches `27.62%` catalog coverage (`Mean Pop@10 = 1,086.3`).
+> - **Honest baseline comparison:** On H&M's 7-day fashion horizon, simple **User Repurchase** (`0.0337` NDCG@10) and **ItemKNN** (`0.0169` NDCG@10) outperform a 3-epoch Two-Tower—consistent with H&M competition findings where repeat-purchase & co-visitation signals dominate short-horizon accuracy while Two-Tower handles cold-start & semantic retrieval.
+> - **Top Stage-2 LightGBM Gain Importances:** `is_repurchase` (`176,011`), `stage1_cosine_score` (`75,601`), `steps_since_same_dept` (`33,201`), `item_log_popularity` (`24,331`), `item_price` (`18,757`), `user_avg_price` (`15,555`), `sales_channel_id` (`14,839`), `dept_affinity_count` (`13,940`), `price_zscore` (`11,918`).
 
 ### Serving Load Test (`locust` — 20 Concurrent Users, 60s, Single-Worker Uvicorn + Docker Qdrant/Redis)
 - **Throughput:** `86.96 req/s` (`5,165` requests, **0.00% failures**)
