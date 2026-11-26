@@ -16,7 +16,12 @@ from src.baselines.classical import (
 )
 from src.baselines.popularity import evaluate_popularity_baseline
 from src.data.temporal_split import SplitConfig, build_temporal_split
-from src.eval.diagnostics import bootstrap_ci, evaluate_candidate_pool, paired_comparison
+from src.eval.diagnostics import (
+    bootstrap_ci,
+    evaluate_candidate_pool,
+    paired_comparison,
+    reciprocal_rank_fusion,
+)
 from src.eval.metrics import (
     catalog_coverage_at_k,
     evaluate_recommendations,
@@ -172,11 +177,15 @@ def test_diagnostics_bootstrap_paired_and_candidate_pool() -> None:
     assert ci["mean"] == pytest.approx(0.25)
     assert 0.1 <= ci["ci_low"] <= ci["mean"] <= ci["ci_high"] <= 0.4
 
-    paired = paired_comparison([0.5, 0.2, 0.0], [0.1, 0.2, 0.3])
+    paired = paired_comparison([0.5, 0.2, 0.0], [0.1, 0.2, 0.3], n_boot=200, seed=42)
     assert paired["wins"] == 1
     assert paired["ties"] == 1
     assert paired["losses"] == 1
     assert paired["win_rate_nonzero"] == pytest.approx(0.5)
+    assert paired["ci_low"] <= paired["mean_diff"] <= paired["ci_high"]
+
+    rrf = reciprocal_rank_fusion([["a", "b"], ["b", "c"]], k=60, top_n=3)
+    assert rrf[0] == "b"
 
     pool = evaluate_candidate_pool(
         gt_by_user={"u1": {"a", "b"}, "u2": {"c", "z"}},

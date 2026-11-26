@@ -31,26 +31,53 @@ def bootstrap_ci(
 def paired_comparison(
     model_scores: Sequence[float],
     baseline_scores: Sequence[float],
+    n_boot: int = 1000,
+    seed: int = 42,
 ) -> dict[str, float]:
-    """Compute per-user paired win/tie/loss counts and mean delta."""
+    """Compute per-user paired win/tie/loss counts, mean delta, and paired bootstrap 95% CI."""
     a = np.asarray(model_scores, dtype=np.float64)
     b = np.asarray(baseline_scores, dtype=np.float64)
     if a.shape != b.shape:
         raise ValueError(f"Shape mismatch: {a.shape} vs {b.shape}")
     if a.size == 0:
-        return {"mean_diff": 0.0, "wins": 0, "ties": 0, "losses": 0, "win_rate_nonzero": 0.0}
+        return {
+            "mean_diff": 0.0,
+            "ci_low": 0.0,
+            "ci_high": 0.0,
+            "wins": 0,
+            "ties": 0,
+            "losses": 0,
+            "win_rate_nonzero": 0.0,
+        }
     diff = a - b
+    ci = bootstrap_ci(diff, n_boot=n_boot, seed=seed)
     wins = int(np.sum(diff > 1e-12))
     losses = int(np.sum(diff < -1e-12))
     ties = int(a.size - wins - losses)
     nonzero = wins + losses
     return {
-        "mean_diff": float(diff.mean()),
+        "mean_diff": ci["mean"],
+        "ci_low": ci["ci_low"],
+        "ci_high": ci["ci_high"],
         "wins": wins,
         "ties": ties,
         "losses": losses,
         "win_rate_nonzero": float(wins / nonzero) if nonzero > 0 else 0.0,
     }
+
+
+def reciprocal_rank_fusion(
+    ranked_lists: Sequence[Sequence[str]],
+    k: int = 60,
+    top_n: int = 50,
+) -> list[str]:
+    """Fuse multiple candidate lists using parameter-free Reciprocal Rank Fusion (RRF)."""
+    scores: dict[str, float] = {}
+    for lst in ranked_lists:
+        for rank, item in enumerate(lst):
+            key = str(item)
+            scores[key] = scores.get(key, 0.0) + 1.0 / (k + rank + 1)
+    return [item for item, _ in sorted(scores.items(), key=lambda x: (-x[1], x[0]))[:top_n]]
 
 
 def evaluate_candidate_pool(
