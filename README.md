@@ -40,7 +40,7 @@ Next.js Storefront + Pipeline Inspector
 
 ## Ablation & Benchmark Results (H&M 8-Week Temporal Split)
 
-Evaluated strictly on **future Week 8 purchases** (`head(1)` prediction timestamp — zero Week-8 history leakage) across **35,576 active SKUs** (`1,678,323` train / `255,241` val / `240,311` test transactions):
+Evaluated on a **date-level temporal split** (`ORDER BY t_dat, row_id`, predicting 7-day Week 8 future-horizon purchases from each user's first Week-8 interaction using strictly Weeks 1–7 history) across **35,576 active SKUs** (`1,678,323` train / `255,241` val / `240,311` test transactions):
 
 | Model / Pipeline Stage | Recall@50 | NDCG@10 | MRR@10 |
 | :--- | :---: | :---: | :---: |

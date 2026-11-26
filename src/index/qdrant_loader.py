@@ -7,6 +7,7 @@ import os
 import uuid
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 from qdrant_client import QdrantClient
 from qdrant_client.models import (
@@ -87,6 +88,40 @@ def _delete_stale_points(client: QdrantClient, collection: str, valid_ids: set[s
     return len(stale_ids)
 
 
+def validate_catalog_and_embeddings(cat_df: pd.DataFrame, emb_df: pd.DataFrame) -> tuple[pd.DataFrame, int]:
+    """Fail-fast validation before any Qdrant writes or stale pruning."""
+    if cat_df.empty or emb_df.empty:
+        raise ValueError("Catalog or embeddings table is empty.")
+
+    cat_ids = cat_df["article_id"].astype(str)
+    emb_ids = emb_df["article_id"].astype(str)
+    if not cat_ids.is_unique:
+        raise ValueError("Duplicate article_id values found in catalog.")
+    if not emb_ids.is_unique:
+        raise ValueError("Duplicate article_id values found in embeddings.")
+
+    missing = set(cat_ids) - set(emb_ids)
+    if missing:
+        raise ValueError(f"Missing embeddings for {len(missing)} catalog items (e.g. {sorted(missing)[:3]}).")
+
+    merged = cat_df.copy()
+    merged["article_id"] = cat_ids
+    emb_clean = emb_df.copy()
+    emb_clean["article_id"] = emb_ids
+    merged = merged.merge(emb_clean, on="article_id", how="inner")
+
+    first_vec = np.asarray(merged["embedding"].iloc[0], dtype=np.float32)
+    vec_size = int(first_vec.shape[0])
+    for art_id, raw_vec in zip(merged["article_id"], merged["embedding"]):
+        arr = np.asarray(raw_vec, dtype=np.float32)
+        if arr.ndim != 1 or arr.shape[0] != vec_size:
+            raise ValueError(f"Dimension mismatch for {art_id}: expected {vec_size}, got {arr.shape}")
+        if not np.isfinite(arr).all():
+            raise ValueError(f"Non-finite (NaN/Inf) embedding detected for {art_id}.")
+
+    return merged, vec_size
+
+
 def load_catalog_to_qdrant(
     client: QdrantClient,
     catalog_parquet: Path,
@@ -96,15 +131,10 @@ def load_catalog_to_qdrant(
     recreate: bool = False,
     prune_stale: bool = True,
 ) -> int:
-    """Join catalog metadata with 128-d embeddings and non-destructively upsert into Qdrant."""
+    """Validate inputs, then non-destructively upsert catalog + embeddings into Qdrant."""
     cat_df = pd.read_parquet(catalog_parquet)
     emb_df = pd.read_parquet(embeddings_parquet)
-    merged = cat_df.merge(emb_df, on="article_id", how="inner")
-
-    if merged.empty:
-        return 0
-
-    vec_size = len(merged["embedding"].iloc[0])
+    merged, vec_size = validate_catalog_and_embeddings(cat_df, emb_df)
     ensure_collection(client, collection=collection, vector_size=vec_size, recreate=recreate)
 
     total = 0
