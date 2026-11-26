@@ -300,7 +300,10 @@ def step4_train_two_tower(
     opt = torch.optim.AdamW(list(item_tower.parameters()) + list(user_tower.parameters()), lr=1e-3, weight_decay=1e-4)
 
     ds = InteractionDataset(train_df, art_to_idx)
-    loader = DataLoader(ds, batch_size=batch_size, shuffle=True, drop_last=True)
+    if len(ds) == 0:
+        raise ValueError("InteractionDataset is empty; cannot train Two-Tower.")
+    effective_bs = min(batch_size, len(ds))
+    loader = DataLoader(ds, batch_size=effective_bs, shuffle=True, drop_last=len(ds) > effective_bs)
 
     for epoch in range(1, epochs + 1):
         item_tower.train()
@@ -332,11 +335,11 @@ def step4_train_two_tower(
 
     item_embs = compute_catalog_embeddings(item_tower, minilm_vecs, cat_feats)
 
-    # Evaluate latest interaction per user on Week 8 Test
-    test_last = test_df.sort_values(["t_dat", "row_id"]).groupby("customer_id").tail(1)
-    top_ids, _ = retrieve_topk_for_df(user_tower, item_embs, test_last, art_to_idx, idx_to_art, top_k=50)
+    # Evaluate at user's FIRST Week 8 interaction (history strictly from Weeks 1-7 -> zero Week 8 leakage)
+    test_first = test_df.sort_values(["t_dat", "row_id"]).groupby("customer_id").head(1)
+    top_ids, _ = retrieve_topk_for_df(user_tower, item_embs, test_first, art_to_idx, idx_to_art, top_k=50)
     gt = test_df.groupby("customer_id")["article_id"].apply(set).to_dict()
-    preds = dict(zip(test_last["customer_id"], top_ids))
+    preds = dict(zip(test_first["customer_id"], top_ids))
     metrics = eval_ranked_lists(gt, preds)
     print(f"Two-Tower (logQ={apply_logq}) Week 8 Test:", metrics)
     return user_tower, item_tower, item_embs, metrics
@@ -401,12 +404,12 @@ def step5_stage2_lightgbm(
     ranker.fit(X_train, y_train, group=groups)
     ranker.booster_.save_model(str(ART_DIR / "lgbm_ranker.txt"))
 
-    # Strict unmodified evaluation on Week 8 Test
-    test_last = test_df.sort_values(["t_dat", "row_id"]).groupby("customer_id").tail(1)
-    test_ids, test_scores = retrieve_topk_for_df(user_tower, item_embs, test_last, art_to_idx, idx_to_art, top_k=100)
+    # Strict unmodified future-horizon evaluation at user's FIRST Week 8 interaction
+    test_first = test_df.sort_values(["t_dat", "row_id"]).groupby("customer_id").head(1)
+    test_ids, test_scores = retrieve_topk_for_df(user_tower, item_embs, test_first, art_to_idx, idx_to_art, top_k=100)
 
     preds_by_user = {}
-    for row, cand_ids, cand_scores in zip(test_last.itertuples(), test_ids, test_scores):
+    for row, cand_ids, cand_scores in zip(test_first.itertuples(), test_ids, test_scores):
         cands = [
             {
                 "stage1_cosine_score": sc,

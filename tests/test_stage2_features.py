@@ -66,3 +66,8 @@ def test_stage2_features_empty_history() -> None:
     assert feats[0, 2] == pytest.approx(0.0)
     assert feats[0, 3] == pytest.approx(0.0)
     assert feats[0, 6] == pytest.approx(99.0)
+
+
+def test_stage2_features_unequal_lengths_raises() -> None:
+    with pytest.raises(ValueError, match="History length mismatch"):
+        compute_stage2_features_for_candidates([10.0, 20.0], ["DeptA"], ["Grp1"], 2, [])

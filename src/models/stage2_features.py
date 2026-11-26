@@ -29,10 +29,15 @@ def compute_stage2_features_for_candidates(
 ) -> np.ndarray:
     """Compute the exact 9 Stage-2 features for a list of candidate dicts.
 
-    Note: hist_* sequences are ordered most-recent-first (index 0 = latest click)
-    in serving, or chronological in DuckDB; count/mean/recency handle order cleanly
-    when passed most-recent-first.
+    Contract: hist_prices, hist_departments, and hist_groups MUST have equal lengths
+    and MUST be ordered most-recent-first (index 0 = latest click) for accurate recency.
     """
+    if not (len(hist_prices) == len(hist_departments) == len(hist_groups)):
+        raise ValueError(
+            f"History length mismatch: prices={len(hist_prices)}, "
+            f"departments={len(hist_departments)}, groups={len(hist_groups)}"
+        )
+
     n = len(candidates)
     if n == 0:
         return np.zeros((0, len(STAGE2_FEATURE_NAMES)), dtype=np.float32)

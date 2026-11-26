@@ -97,10 +97,18 @@ def test_end_to_end_qdrant_onnx_fastapi_flow(tmp_path: Path) -> None:
     )
     client = TestClient(create_app(services))
 
-    # 1. Health check
+    # 1. Health check reports dependency status cleanly
     r_health = client.get("/health")
     assert r_health.status_code == 200
-    assert r_health.json()["status"] == "ok"
+    h_json = r_health.json()
+    assert h_json["status"] == "degraded"  # InMemoryRedis active in unit test
+    assert h_json["dependencies"]["redis"] == "in_memory_fallback"
+    assert h_json["dependencies"]["qdrant"] == "ok"
+    assert h_json["dependencies"]["onnx"] == "ok"
+
+    # 1b. Invalid sales_channel_id rejected at API boundary
+    r_bad_chan = client.get("/recommend?session_id=new_user&sales_channel_id=99")
+    assert r_bad_chan.status_code == 422
 
     # 2. 0-click cold-start fallback
     r_cold = client.get("/recommend?session_id=new_user&top_k=5")
@@ -146,3 +154,17 @@ def test_generate_demo_artifacts(tmp_path: Path) -> None:
     assert (tmp_path / "item_embeddings.parquet").exists()
     assert (tmp_path / "user_tower.onnx").exists()
     assert len(pd.read_parquet(tmp_path / "catalog.parquet")) == 25
+
+
+def test_retriever_fallback_masked_pooling_and_unknown_items() -> None:
+    q_client = QdrantClient(":memory:")
+    v0 = np.array([1.0] + [0.0] * 127, dtype=np.float32)
+    retriever = Stage1Retriever(q_client, onnx_path=None, item_vectors={"known": v0})
+
+    # Empty or unknown-only history returns zero vector
+    assert np.allclose(retriever.encode_user([]), np.zeros(128, dtype=np.float32))
+    assert np.allclose(retriever.encode_user(["missing_id"]), np.zeros(128, dtype=np.float32))
+
+    # Single known item with unknown item ignores unknown and normalizes cleanly
+    emb = retriever.encode_user(["known", "missing_id"])
+    assert np.allclose(emb, v0, atol=1e-5)
