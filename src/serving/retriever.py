@@ -64,8 +64,12 @@ class Stage1Retriever:
             )[0]
             return out[0].astype(np.float32)
 
-        # Fallback if ONNX artifact isn't loaded (e.g. lightweight unit test)
-        pooled = vecs[0].mean(axis=0)
+        # Masked mean fallback when ONNX artifact isn't loaded (never divide by padded length 20)
+        count = float(mask[0].sum())
+        if count > 0.0:
+            pooled = vecs[0].sum(axis=0) / count
+        else:
+            return np.zeros(self._embed_dim, dtype=np.float32)
         norm = float(np.linalg.norm(pooled))
         return (pooled / norm).astype(np.float32) if norm > 1e-6 else pooled
 

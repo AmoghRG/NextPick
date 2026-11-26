@@ -50,11 +50,14 @@ def build_default_services() -> AppServices:
     qdrant_url = os.getenv("QDRANT_URL", "http://localhost:6333")
     qdrant_api_key = os.getenv("QDRANT_API_KEY") or None
     redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+    allow_inmemory = os.getenv("NEXTPICK_ALLOW_INMEMORY_REDIS", "1") == "1"
 
     try:
         r_client = redis.from_url(redis_url, decode_responses=True)
         r_client.ping()
     except Exception:
+        if not allow_inmemory:
+            raise
         r_client = InMemoryRedis()
 
     q_client = QdrantClient(url=qdrant_url, api_key=qdrant_api_key, check_compatibility=False)
@@ -102,11 +105,16 @@ def build_default_services() -> AppServices:
 
 def create_app(services: AppServices | None = None) -> FastAPI:
     app = FastAPI(title="NextPick API", version="1.0.0")
+    cors_origins = [
+        o.strip()
+        for o in os.getenv("NEXTPICK_CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000").split(",")
+        if o.strip()
+    ]
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_origins=cors_origins,
+        allow_methods=["GET", "POST"],
+        allow_headers=["Content-Type"],
     )
     app.state.services = services
 
@@ -118,8 +126,30 @@ def create_app(services: AppServices | None = None) -> FastAPI:
     @app.get("/health")
     def health() -> dict:
         svc = _svc()
+        redis_ok = False
+        redis_inmemory = isinstance(svc.session_store._redis, InMemoryRedis)
+        try:
+            redis_ok = bool(svc.session_store._redis.ping())
+        except Exception:
+            redis_ok = False
+
+        qdrant_ok = False
+        try:
+            qdrant_ok = bool(svc.retriever._qdrant.collection_exists(COLLECTION_NAME))
+        except Exception:
+            qdrant_ok = False
+
+        onnx_ok = svc.retriever._ort is not None
+        lgbm_ok = svc.ranker._booster is not None
+        status = "ok" if (redis_ok and not redis_inmemory and qdrant_ok and onnx_ok) else "degraded"
         return {
-            "status": "ok",
+            "status": status,
+            "dependencies": {
+                "redis": "in_memory_fallback" if redis_inmemory else ("ok" if redis_ok else "down"),
+                "qdrant": "ok" if qdrant_ok else "down",
+                "onnx": "ok" if onnx_ok else "fallback",
+                "lightgbm": "ok" if lgbm_ok else "fallback",
+            },
             "trending_cached": len(svc.trending_fallback),
         }
 
@@ -140,7 +170,7 @@ def create_app(services: AppServices | None = None) -> FastAPI:
         session_id: str = Query(..., min_length=1),
         product_group: str | None = Query(default=None),
         max_price: float | None = Query(default=None),
-        sales_channel_id: int = Query(default=2),
+        sales_channel_id: int = Query(default=2, ge=0, le=3),
         top_k: int = Query(default=10, ge=1, le=50),
     ) -> dict:
         svc = _svc()
