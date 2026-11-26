@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import logging
 import os
 import uuid
 from pathlib import Path
@@ -93,16 +94,32 @@ def validate_catalog_and_embeddings(cat_df: pd.DataFrame, emb_df: pd.DataFrame) 
     if cat_df.empty or emb_df.empty:
         raise ValueError("Catalog or embeddings table is empty.")
 
-    cat_ids = cat_df["article_id"].astype(str)
-    emb_ids = emb_df["article_id"].astype(str)
+    if cat_df["article_id"].isna().any() or emb_df["article_id"].isna().any():
+        raise ValueError("Null article_id values found in catalog or embeddings.")
+
+    cat_ids = cat_df["article_id"].astype(str).str.strip()
+    emb_ids = emb_df["article_id"].astype(str).str.strip()
+    if (cat_ids == "").any() or (emb_ids == "").any():
+        raise ValueError("Empty or whitespace-only article_id values found.")
     if not cat_ids.is_unique:
         raise ValueError("Duplicate article_id values found in catalog.")
     if not emb_ids.is_unique:
         raise ValueError("Duplicate article_id values found in embeddings.")
 
+    if "avg_price" in cat_df.columns:
+        prices = pd.to_numeric(cat_df["avg_price"], errors="coerce").to_numpy(dtype=np.float64)
+        if not np.isfinite(prices).all() or (prices < 0.0).any():
+            raise ValueError("Invalid catalog avg_price values (must be finite and non-negative).")
+
     missing = set(cat_ids) - set(emb_ids)
     if missing:
         raise ValueError(f"Missing embeddings for {len(missing)} catalog items (e.g. {sorted(missing)[:3]}).")
+
+    extra = set(emb_ids) - set(cat_ids)
+    if extra:
+        logging.getLogger("nextpick").warning(
+            "Ignoring %d extra embedding IDs not present in catalog.", len(extra)
+        )
 
     merged = cat_df.copy()
     merged["article_id"] = cat_ids
