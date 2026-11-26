@@ -8,6 +8,7 @@ interface RecommendedItem {
   product_type_name?: string;
   product_group_name: string;
   department_name: string;
+  colour_group_name?: string;
   price: number;
   image_url?: string;
   stage1_rank: number;
@@ -16,6 +17,18 @@ interface RecommendedItem {
   stage1_cosine_score: number;
   stage2_logit: number;
 }
+
+const SWATCH_COLORS: Record<string, string> = {
+  Black: "from-slate-800 to-slate-950",
+  White: "from-slate-200 to-slate-400 text-slate-900",
+  Blue: "from-blue-700 to-indigo-950",
+  "Dark Blue": "from-blue-900 to-slate-950",
+  Beige: "from-amber-200/80 to-stone-400 text-slate-900",
+  Grey: "from-zinc-500 to-zinc-800",
+  Red: "from-rose-700 to-red-950",
+  Green: "from-emerald-700 to-teal-950",
+  Pink: "from-pink-500 to-rose-900",
+};
 
 interface LatencyBreakdown {
   redis: number;
@@ -213,20 +226,17 @@ export default function HomePage() {
                 onClick={() => handleProductClick(item)}
                 className="text-left bg-slate-900/90 hover:bg-slate-800/90 border border-slate-800 hover:border-blue-500/60 rounded-xl p-4 transition flex gap-3.5 items-start"
               >
-                <div className="w-16 h-20 rounded-lg bg-slate-800 overflow-hidden shrink-0 flex items-center justify-center border border-slate-700/60">
-                  {item.image_url ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={item.image_url}
-                      alt={item.prod_name || item.article_id}
-                      className="w-full h-full object-cover"
-                      onError={(e) => {
-                        e.currentTarget.style.display = "none";
-                      }}
-                    />
-                  ) : (
-                    <span className="text-[10px] font-mono text-slate-500">SKU</span>
-                  )}
+                <div
+                  className={`w-16 h-20 rounded-lg bg-gradient-to-br ${
+                    SWATCH_COLORS[item.colour_group_name ?? ""] ?? "from-slate-700 to-slate-900"
+                  } overflow-hidden shrink-0 flex flex-col items-center justify-center border border-slate-700/60 px-1 text-center`}
+                >
+                  <span className="text-[10px] font-bold uppercase tracking-wider leading-tight">
+                    {(item.product_type_name || item.department_name || "SKU").slice(0, 8)}
+                  </span>
+                  <span className="text-[9px] opacity-75 mt-1 truncate max-w-full">
+                    {item.colour_group_name || "Fashion"}
+                  </span>
                 </div>
 
                 <div className="min-w-0 flex-1">
