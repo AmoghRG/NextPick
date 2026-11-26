@@ -131,3 +131,18 @@ def test_end_to_end_qdrant_onnx_fastapi_flow(tmp_path: Path) -> None:
     assert all(item["product_group_name"] == "Upper" for item in body["items"])
     assert "rank_delta" in body["items"][0]
     assert set(body["latency_ms"].keys()) == {"redis", "onnx", "qdrant", "lightgbm", "total"}
+
+    # 4. Verify ONNX LRU cache hit on repeated identical sequence
+    services.retriever.encode_user(["art_002"], sales_channel_id=2)
+    cache_info = services.retriever._cached_encode.cache_info()
+    assert cache_info.hits >= 1
+
+
+def test_generate_demo_artifacts(tmp_path: Path) -> None:
+    from scripts.generate_demo_artifacts import generate_demo_artifacts
+
+    generate_demo_artifacts(tmp_path, num_items=25)
+    assert (tmp_path / "catalog.parquet").exists()
+    assert (tmp_path / "item_embeddings.parquet").exists()
+    assert (tmp_path / "user_tower.onnx").exists()
+    assert len(pd.read_parquet(tmp_path / "catalog.parquet")) == 25

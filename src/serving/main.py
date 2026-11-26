@@ -48,6 +48,7 @@ def build_default_services() -> AppServices:
     """Initialize Redis, Qdrant, ONNX, and LightGBM from environment / ./artifacts."""
     art_dir = Path(os.getenv("NEXTPICK_ARTIFACTS_DIR", "artifacts"))
     qdrant_url = os.getenv("QDRANT_URL", "http://localhost:6333")
+    qdrant_api_key = os.getenv("QDRANT_API_KEY") or None
     redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
     try:
@@ -56,7 +57,7 @@ def build_default_services() -> AppServices:
     except Exception:
         r_client = InMemoryRedis()
 
-    q_client = QdrantClient(url=qdrant_url)
+    q_client = QdrantClient(url=qdrant_url, api_key=qdrant_api_key, check_compatibility=False)
 
     item_vectors: dict[str, np.ndarray] = {}
     emb_path = art_dir / "item_embeddings.parquet"

@@ -58,7 +58,14 @@ Evaluated on **35,576 active SKUs** (`1,678,323` train / `255,241` val / `240,31
 
 ## Quickstart
 
-### 1. Train & Export Artifacts (Kaggle T4 GPU)
+### 0. Instant 60-Second Demo (No Kaggle Required)
+```bash
+make demo   # Generates 500 demo SKUs + user_tower.onnx, boots Qdrant & Redis, indexes Qdrant
+make api    # Starts FastAPI on :8000
+make web    # Starts Next.js Storefront + Pipeline Inspector on :3000
+```
+
+### 1. Full H&M Training & Export (Kaggle T4 GPU)
 Upload `notebooks/kaggle_train_pipeline.py` to a Kaggle notebook with the H&M Personalized Fashion dataset attached, run it, and place the exported files (`user_tower.onnx`, `item_embeddings.parquet`, `lgbm_ranker.txt`, `catalog.parquet`) into `./artifacts/`.
 
 ### 2. Start Qdrant, Redis & FastAPI Locally
