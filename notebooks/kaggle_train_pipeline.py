@@ -361,10 +361,9 @@ def step5_stage2_lightgbm(
     X_rows, y_rows, groups = [], [], []
     for row, cand_ids, cand_scores in zip(val_sample.itertuples(), val_ids, val_scores):
         gt_item = row.article_id
-        # Inject positive into Top-100 if absent during Stage-2 lambdarank training only
+        # Keep only natural Stage-1 Top-100 hits so stage1_cosine_score distribution stays uncorrupted
         if gt_item not in cand_ids:
-            cand_ids = cand_ids[:-1] + [gt_item]
-            cand_scores = cand_scores[:-1] + [float(cand_scores[-1])]
+            continue
 
         cands = [
             {
