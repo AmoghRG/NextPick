@@ -55,11 +55,11 @@ Evaluated on a **date-level temporal split** (`ORDER BY t_dat, row_id`, predicti
 | Two-Tower (No `logQ` — collapses popular items) | 0.0035 | 0.0006 | 0.0008 | 81.90% | 144.8 |
 | Two-Tower Only (`In-Batch + logQ + Attention + Decay`) | 0.0768 | 0.0265 `[0.0257, 0.0274]` | 0.0328 | 43.56% | 837.2 |
 | Two-Tower + LightGBM (ANN-80 reranked) | 0.0848 | 0.0342 `[0.0332, 0.0352]` | 0.0438 | 44.03% | 944.6 |
-| Multi-Channel Unranked (ANN-80 + Rep-20 + KNN-20) | 0.0768 | 0.0265 `[0.0257, 0.0274]` | 0.0328 | 43.56% | 837.2 |
+| Multi-Channel Unranked (RRF: ANN-80 + Rep-20 + KNN-20) | 0.0934 | 0.0317 `[0.0308, 0.0326]` | 0.0382 | 51.81% | 1,316.0 |
 | **Multi-Channel Stage 1 + LightGBM Stage 2 (14 features)** | **0.0976** `[0.0957, 0.0994]` | **0.0349** `[0.0339, 0.0359]` | **0.0435** | **50.85%** | **992.4** |
 
 > **Key takeaways from the full Week-8 evaluation (`68,984` users, [`docs/eval_diagnostics.json`](docs/eval_diagnostics.json)):**
-> - **Beats every baseline on `Recall@50` and `NDCG@10`:** Full Multi-Channel + LightGBM hits **`0.0976` Recall@50** (+23.1% over Repurchase `0.0793`, +59.7% over ItemKNN `0.0611`) and **`0.0349` NDCG@10** (`[0.0339, 0.0359]`, non-overlapping 95% CI vs. Popularity & ItemKNN; paired `NDCG@10` win rate `73.8%` vs. Popularity, `65.8%` vs. ItemKNN, `65.3%` vs. Two-Tower only).
+> - **Statistically significant paired `NDCG@10` lift over every baseline:** Full Multi-Channel + LightGBM hits **`0.0976` Recall@50** (+23.1% over Repurchase `0.0793`) and **`0.0349` NDCG@10**; paired bootstrap 95% CIs on per-user $\Delta\text{NDCG@10}$ are strictly positive vs. **Popularity** (`+0.0261 [+0.0251, +0.0271]`), **ItemKNN** (`+0.0180 [+0.0171, +0.0190]`), **Two-Tower Only** (`+0.0084 [+0.0077, +0.0090]`), **Multi-Channel RRF** (`+0.0032 [+0.0026, +0.0038]`), and **User Repurchase** (`+0.0012 [+0.0005, +0.0018]`).
 > - **Candidate Pool Diagnostics (avg `99.8` unique items/user):** `12.46%` Candidate Recall (`24.51%` user hit rate). Every channel contributes unique ground-truth hits: **Two-Tower ANN (`43.51%` unique hits)**, **Repurchase (`17.76%` unique hits)**, **ItemKNN (`4.51%` unique hits)**.
 > - **Anti-bias & coverage:** Global Popularity covers just `0.03%` of the catalog (`Mean Pop@10 = 2,366.8`), whereas the full 2-stage pipeline reaches **`50.85%` catalog coverage** (`Mean Pop@10 = 992.4`).
 > - **Top Stage-2 LightGBM Gain Importances:** `is_repurchase` (`189,394`), `item_knn_score` (`144,446`), `steps_since_same_dept` (`105,124`), `stage1_cosine_score` (`85,755`), `user_avg_price` (`37,200`), `item_log_popularity` (`35,391`), `item_price` (`30,604`), `price_abs_diff` (`21,831`), `price_zscore` (`21,172`).
