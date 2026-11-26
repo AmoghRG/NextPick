@@ -1,4 +1,4 @@
-"""Stage-2 LightGBM lambdarank scorer using the shared 13 zero-skew features."""
+"""Stage-2 LightGBM lambdarank scorer using the shared 14 zero-skew features."""
 
 from __future__ import annotations
 

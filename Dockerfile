@@ -1,3 +1,14 @@
+FROM python:3.12-slim AS builder
+
+WORKDIR /build
+
+RUN pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu torch \
+    && pip install --no-cache-dir onnx onnxscript numpy pandas pyarrow
+
+COPY src/ ./src/
+COPY scripts/ ./scripts/
+RUN PYTHONPATH=/build python -m scripts.generate_demo_artifacts --out-dir /build/artifacts
+
 FROM python:3.12-slim
 
 WORKDIR /app
@@ -8,8 +19,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir fastapi uvicorn[standard] qdrant-client redis lightgbm onnxruntime numpy pandas pyarrow
 
 COPY src/ ./src/
-COPY scripts/ ./scripts/
-RUN python -m scripts.generate_demo_artifacts --out-dir artifacts
+COPY --from=builder /build/artifacts ./artifacts
 
 ENV PYTHONPATH=/app
 EXPOSE 7860
