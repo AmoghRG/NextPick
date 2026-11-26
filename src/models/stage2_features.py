@@ -1,4 +1,4 @@
-"""Shared zero-skew 13-feature builder for Stage-2 LightGBM training and FastAPI serving."""
+"""Shared zero-skew 14-feature builder for Stage-2 LightGBM training and FastAPI serving."""
 
 from __future__ import annotations
 
@@ -21,6 +21,7 @@ STAGE2_FEATURE_NAMES: tuple[str, ...] = (
     "steps_since_same_group",
     "is_repurchase",
     "hist_repurchase_count",
+    "item_knn_score",
 )
 
 
@@ -32,7 +33,7 @@ def compute_stage2_features_for_candidates(
     candidates: Sequence[dict],
     hist_article_ids: Sequence[str] | None = None,
 ) -> np.ndarray:
-    """Compute the exact 13 Stage-2 features for a list of candidate dicts.
+    """Compute the exact 14 Stage-2 features for a list of candidate dicts.
 
     Contract: hist_prices, hist_departments, hist_groups (and hist_article_ids if provided)
     MUST have equal lengths and MUST be ordered most-recent-first (index 0 = latest click)
@@ -97,5 +98,6 @@ def compute_stage2_features_for_candidates(
         feats[i, 10] = float(first_group_step.get(grp, 99))
         feats[i, 11] = 1.0 if repurchase_cnt > 0 else 0.0
         feats[i, 12] = float(repurchase_cnt)
+        feats[i, 13] = float(c.get("item_knn_score", 0.0))
 
     return feats

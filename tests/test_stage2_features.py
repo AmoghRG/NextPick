@@ -28,6 +28,7 @@ def test_stage2_features_exact_values() -> None:
             "department_name": "DeptA",
             "product_group_name": "Grp1",
             "train_tx_count": 99,
+            "item_knn_score": 0.42,
         },
         {
             "article_id": "art_999",
@@ -48,7 +49,7 @@ def test_stage2_features_exact_values() -> None:
         hist_article_ids=hist_article_ids,
     )
     assert feats.shape == (2, len(STAGE2_FEATURE_NAMES))
-    assert len(STAGE2_FEATURE_NAMES) == 13
+    assert len(STAGE2_FEATURE_NAMES) == 14
 
     user_std = float(np.std(hist_prices))
     # Candidate 0 checks
@@ -65,6 +66,7 @@ def test_stage2_features_exact_values() -> None:
     assert feats[0, 10] == pytest.approx(0.0)  # latest click was Grp1
     assert feats[0, 11] == pytest.approx(1.0)  # art_1 in history
     assert feats[0, 12] == pytest.approx(2.0)  # art_1 clicked twice
+    assert feats[0, 13] == pytest.approx(0.42)  # item_knn_score
 
     # Candidate 1 checks (unseen dept/group/article -> recency sentinel 99, repurchase 0)
     assert feats[1, 4] == pytest.approx(0.0)

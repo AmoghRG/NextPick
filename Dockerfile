@@ -8,7 +8,8 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir fastapi uvicorn[standard] qdrant-client redis lightgbm onnxruntime numpy pandas pyarrow
 
 COPY src/ ./src/
-COPY artifacts/ ./artifacts/
+COPY scripts/ ./scripts/
+RUN python -m scripts.generate_demo_artifacts --out-dir artifacts
 
 ENV PYTHONPATH=/app
 EXPOSE 7860

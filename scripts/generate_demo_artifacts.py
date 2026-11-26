@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 
 import numpy as np
@@ -45,6 +46,16 @@ def generate_demo_artifacts(out_dir: Path, num_items: int = 500, seed: int = 42)
     emb_df.to_parquet(out_dir / "item_embeddings.parquet", index=False)
 
     export_user_tower_onnx(UserTower().eval(), out_dir / "user_tower.onnx")
+    (out_dir / "demo_manifest.json").write_text(
+        json.dumps(
+            {
+                "is_synthetic_demo": True,
+                "model_origin": "synthetic_random_untrained",
+                "num_items": num_items,
+            },
+            indent=2,
+        )
+    )
 
 
 def main() -> None:
