@@ -45,13 +45,15 @@ Evaluated strictly on **future Week 8 purchases** (`head(1)` prediction timestam
 | Model / Pipeline Stage | Recall@50 | NDCG@10 | MRR@10 |
 | :--- | :---: | :---: | :---: |
 | Popularity Baseline (Weeks 1–6) | 0.0493 | 0.0088 | 0.0131 |
+| Two-Tower (No `logQ` — collapses popular items) | 0.0036 | 0.0006 | 0.0008 |
 | Two-Tower (`In-Batch + logQ + Decay`) | 0.0711 | 0.0236 | 0.0291 |
 | **Two-Tower + LightGBM Stage 2** | **0.0773** | **0.0267** | **0.0340** |
 
-### Serving Load Test (`locust` — 20 Concurrent Users, 15s, Single-Worker Uvicorn + Docker Qdrant/Redis)
-- **Throughput:** `105.98 req/s` (`1,344` requests, **0.00% failures**)
-- **`POST /event`:** `7 ms` median · `40 ms` p95
-- **Aggregated (`/event` + `/recommend`):** `17 ms` median · `140 ms` p95
+### Serving Load Test (`locust` — 20 Concurrent Users, 60s, Single-Worker Uvicorn + Docker Qdrant/Redis)
+- **Throughput:** `86.96 req/s` (`5,165` requests, **0.00% failures**)
+- **`POST /event`:** `21 ms` median · `92 ms` p95
+- **`GET /recommend` (2-stage personalized):** `~95 ms` median · `~260 ms` p95
+- **Aggregated (`/event` + `/recommend`):** `75 ms` median · `240 ms` p95 · `480 ms` p99
 
 ### Evaluation & Reproducibility Audit
 - **Raw Metrics Output:** [`docs/ablation_metrics.json`](docs/ablation_metrics.json) (exported directly from Kaggle Week 8 evaluation)
