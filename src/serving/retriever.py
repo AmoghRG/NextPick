@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from functools import lru_cache
 from pathlib import Path
 
 import numpy as np
@@ -11,6 +12,13 @@ from qdrant_client import QdrantClient
 from qdrant_client.models import FieldCondition, Filter, MatchValue, Range
 
 from src.index.qdrant_loader import COLLECTION_NAME
+
+
+def _build_ort_session(onnx_path: Path) -> ort.InferenceSession:
+    opts = ort.SessionOptions()
+    opts.intra_op_num_threads = 1
+    opts.inter_op_num_threads = 1
+    return ort.InferenceSession(str(onnx_path), sess_options=opts, providers=["CPUExecutionProvider"])
 
 
 class Stage1Retriever:
@@ -30,13 +38,15 @@ class Stage1Retriever:
         self._item_vectors = item_vectors
         self._max_seq_len = max_seq_len
         self._embed_dim = embed_dim
-        self._ort = (
-            ort.InferenceSession(str(onnx_path), providers=["CPUExecutionProvider"])
-            if onnx_path and onnx_path.exists()
-            else None
-        )
+        self._ort = _build_ort_session(onnx_path) if onnx_path and onnx_path.exists() else None
+        self._cached_encode = lru_cache(maxsize=4096)(self._encode_uncached)
 
     def encode_user(self, article_ids_recent_first: Sequence[str], sales_channel_id: int = 2) -> np.ndarray:
+        """Return cached 128-d user embedding for identical recent click sequences."""
+        key = tuple(article_ids_recent_first[: self._max_seq_len])
+        return self._cached_encode(key, sales_channel_id)
+
+    def _encode_uncached(self, article_ids_recent_first: tuple[str, ...], sales_channel_id: int) -> np.ndarray:
         """Assemble (1, L, 128) history tensor and run ONNX User Tower (or fallback mean)."""
         vecs = np.zeros((1, self._max_seq_len, self._embed_dim), dtype=np.float32)
         mask = np.zeros((1, self._max_seq_len), dtype=np.float32)

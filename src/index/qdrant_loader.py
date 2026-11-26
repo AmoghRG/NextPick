@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 from pathlib import Path
 
 import pandas as pd
@@ -93,12 +94,18 @@ def load_catalog_to_qdrant(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Index NextPick item embeddings into Qdrant.")
-    parser.add_argument("--qdrant-url", default="http://localhost:6333")
+    parser.add_argument("--qdrant-url", default=os.getenv("QDRANT_URL", "http://localhost:6333"))
+    parser.add_argument("--qdrant-api-key", default=os.getenv("QDRANT_API_KEY", ""))
     parser.add_argument("--catalog", type=Path, default=Path("artifacts/catalog.parquet"))
     parser.add_argument("--embeddings", type=Path, default=Path("artifacts/item_embeddings.parquet"))
     args = parser.parse_args()
 
-    client = QdrantClient(url=args.qdrant_url, timeout=60)
+    client = QdrantClient(
+        url=args.qdrant_url,
+        api_key=args.qdrant_api_key or None,
+        timeout=60,
+        check_compatibility=False,
+    )
     count = load_catalog_to_qdrant(client, args.catalog, args.embeddings)
     print(f"Indexed {count} items into Qdrant collection '{COLLECTION_NAME}'.")
 
