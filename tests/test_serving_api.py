@@ -220,3 +220,57 @@ def test_qdrant_stable_ids_and_stale_pruning(tmp_path: Path) -> None:
     pts, _ = q_client.scroll(collection_name=COLLECTION_NAME, limit=10, with_payload=True)
     ids_present = {p.payload["article_id"] for p in pts}
     assert ids_present == {"SKU_A", "SKU_C"}
+
+
+def test_qdrant_loader_fails_fast_on_invalid_inputs(tmp_path: Path) -> None:
+    import pytest
+
+    q_client = QdrantClient(":memory:")
+    cat_ok = pd.DataFrame([{"article_id": "SKU_A"}, {"article_id": "SKU_B"}])
+    emb_ok = pd.DataFrame({"article_id": ["SKU_A", "SKU_B"], "embedding": [[0.1] * 128, [0.2] * 128]})
+    c_ok, e_ok = tmp_path / "c_ok.parquet", tmp_path / "e_ok.parquet"
+    cat_ok.to_parquet(c_ok, index=False)
+    emb_ok.to_parquet(e_ok, index=False)
+    assert load_catalog_to_qdrant(q_client, c_ok, e_ok) == 2
+
+    # Missing embedding for SKU_B must fail fast WITHOUT deleting existing points
+    emb_partial = pd.DataFrame({"article_id": ["SKU_A"], "embedding": [[0.1] * 128]})
+    e_part = tmp_path / "e_part.parquet"
+    emb_partial.to_parquet(e_part, index=False)
+    with pytest.raises(ValueError, match="Missing embeddings"):
+        load_catalog_to_qdrant(q_client, c_ok, e_part)
+    assert q_client.get_collection(COLLECTION_NAME).points_count == 2
+
+    # NaN embedding must fail fast
+    emb_nan = pd.DataFrame({"article_id": ["SKU_A", "SKU_B"], "embedding": [[float("nan")] * 128, [0.2] * 128]})
+    e_nan = tmp_path / "e_nan.parquet"
+    emb_nan.to_parquet(e_nan, index=False)
+    with pytest.raises(ValueError, match="Non-finite"):
+        load_catalog_to_qdrant(q_client, c_ok, e_nan)
+
+
+def test_dependency_failure_modes(monkeypatch, tmp_path: Path) -> None:
+    import pytest
+    from src.serving.main import build_default_services
+
+    # 1. Redis down + NEXTPICK_ALLOW_INMEMORY_REDIS=0 must raise
+    monkeypatch.setenv("REDIS_URL", "redis://127.0.0.1:59999/0")
+    monkeypatch.setenv("NEXTPICK_ALLOW_INMEMORY_REDIS", "0")
+    with pytest.raises(Exception):
+        build_default_services()
+
+    # 2. Empty Qdrant collection + Qdrant down health status
+    q_client = QdrantClient(":memory:")
+    services = AppServices(
+        session_store=SessionStore(InMemoryRedis()),
+        retriever=Stage1Retriever(q_client, onnx_path=None, item_vectors={}),
+        ranker=Stage2Ranker(model_path=None),
+        trending_fallback=[],
+    )
+    client = TestClient(create_app(services))
+    h = client.get("/health").json()
+    assert h["status"] == "degraded"
+    assert h["dependencies"]["qdrant"] == "down"
+
+    # 3. Empty candidates returns [] cleanly
+    assert services.ranker.rank([], []) == []

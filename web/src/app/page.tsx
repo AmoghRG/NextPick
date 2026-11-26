@@ -292,12 +292,22 @@ export default function HomePage() {
               <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-300">Pipeline Inspector</h2>
               <span
                 className={`text-xs px-2 py-0.5 rounded font-mono ${
-                  apiOnline ? "bg-emerald-950 text-emerald-300" : "bg-amber-950 text-amber-300"
+                  apiOnline && data?.ranker_mode === "trained_lightgbm"
+                    ? "bg-emerald-950 text-emerald-300"
+                    : "bg-amber-950 text-amber-300 border border-amber-700/50"
                 }`}
               >
                 {data?.mode ?? "connecting"} · {data?.ranker_mode ?? (apiOnline ? "unknown" : "offline_preview")}
               </span>
             </div>
+
+            {(!apiOnline || (data?.ranker_mode && data.ranker_mode !== "trained_lightgbm")) && (
+              <div className="mb-3 rounded-lg bg-amber-950/60 border border-amber-700/50 px-3 py-1.5 text-[11px] font-mono text-amber-200">
+                {apiOnline
+                  ? "Heuristic fallback active (trained LightGBM model not loaded)."
+                  : "Offline preview mode — showing static seed items (API unreachable)."}
+              </div>
+            )}
 
             <div className="text-xs text-slate-400 font-mono mb-3">
               session={sessionId} · redis_window={data?.history_len ?? clickedTrail.length}/20
