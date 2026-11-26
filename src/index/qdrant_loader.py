@@ -44,7 +44,7 @@ def load_catalog_to_qdrant(
     catalog_parquet: Path,
     embeddings_parquet: Path,
     collection: str = COLLECTION_NAME,
-    batch_size: int = 512,
+    batch_size: int = 256,
 ) -> int:
     """Join catalog metadata with 128-d embeddings and batch-upsert into Qdrant."""
     cat_df = pd.read_parquet(catalog_parquet)
@@ -98,7 +98,7 @@ def main() -> None:
     parser.add_argument("--embeddings", type=Path, default=Path("artifacts/item_embeddings.parquet"))
     args = parser.parse_args()
 
-    client = QdrantClient(url=args.qdrant_url)
+    client = QdrantClient(url=args.qdrant_url, timeout=60)
     count = load_catalog_to_qdrant(client, args.catalog, args.embeddings)
     print(f"Indexed {count} items into Qdrant collection '{COLLECTION_NAME}'.")
 
