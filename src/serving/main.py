@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import time
+import uuid
 from pathlib import Path
 
 import numpy as np
@@ -122,8 +124,31 @@ def create_app(services: AppServices | None = None) -> FastAPI:
         CORSMiddleware,
         allow_origins=cors_origins,
         allow_methods=["GET", "POST"],
-        allow_headers=["Content-Type"],
+        allow_headers=["Content-Type", "X-Request-ID"],
     )
+    access_logger = logging.getLogger("nextpick.access")
+
+    @app.middleware("http")
+    async def request_context_logging(request, call_next):
+        request_id = request.headers.get("X-Request-ID") or uuid.uuid4().hex[:12]
+        t0 = time.perf_counter()
+        response = await call_next(request)
+        duration_ms = round((time.perf_counter() - t0) * 1000.0, 2)
+        response.headers["X-Request-ID"] = request_id
+        response.headers["X-Process-Time-Ms"] = f"{duration_ms:.2f}"
+        access_logger.info(
+            json.dumps(
+                {
+                    "request_id": request_id,
+                    "method": request.method,
+                    "path": request.url.path,
+                    "status_code": response.status_code,
+                    "latency_ms": duration_ms,
+                }
+            )
+        )
+        return response
+
     app.state.services = services
 
     def _svc() -> AppServices:

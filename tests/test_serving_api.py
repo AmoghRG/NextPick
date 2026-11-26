@@ -296,3 +296,118 @@ def test_dependency_failure_modes(monkeypatch, tmp_path: Path) -> None:
 
     # 3. Empty candidates returns [] cleanly
     assert services.ranker.rank([], []) == []
+
+
+def test_api_contract_422_and_request_id_headers() -> None:
+    q_client = QdrantClient(":memory:")
+    services = AppServices(
+        session_store=SessionStore(InMemoryRedis()),
+        retriever=Stage1Retriever(q_client, onnx_path=None, item_vectors={}),
+        ranker=Stage2Ranker(model_path=None),
+        trending_fallback=[],
+    )
+    client = TestClient(create_app(services))
+
+    # Invalid /event payload (negative price) -> 422 + X-Request-ID echoed
+    r_bad_ev = client.post(
+        "/event",
+        json={"session_id": "s1", "article_id": "A1", "price": -1.0},
+        headers={"X-Request-ID": "req-test-422"},
+    )
+    assert r_bad_ev.status_code == 422
+    assert r_bad_ev.headers["X-Request-ID"] == "req-test-422"
+    assert isinstance(r_bad_ev.json()["detail"], list)
+
+    # Invalid /recommend query (top_k=0) -> 422 + auto-generated X-Request-ID
+    r_bad_rec = client.get("/recommend", params={"session_id": "s1", "top_k": 0})
+    assert r_bad_rec.status_code == 422
+    assert len(r_bad_rec.headers["X-Request-ID"]) > 0
+
+
+def test_api_empty_history_cold_start_filters() -> None:
+    q_client = QdrantClient(":memory:")
+    trending = [
+        {
+            "article_id": "T1",
+            "prod_name": "Top Tee",
+            "product_group_name": "Garment Upper body",
+            "department_name": "Jersey",
+            "price": 0.02,
+            "train_tx_count": 100,
+        },
+        {
+            "article_id": "T2",
+            "prod_name": "Expensive Coat",
+            "product_group_name": "Garment Upper body",
+            "department_name": "Outerwear",
+            "price": 0.15,
+            "train_tx_count": 90,
+        },
+        {
+            "article_id": "T3",
+            "prod_name": "Jeans",
+            "product_group_name": "Garment Lower body",
+            "department_name": "Denim",
+            "price": 0.02,
+            "train_tx_count": 80,
+        },
+    ]
+    services = AppServices(
+        session_store=SessionStore(InMemoryRedis()),
+        retriever=Stage1Retriever(q_client, onnx_path=None, item_vectors={}),
+        ranker=Stage2Ranker(model_path=None),
+        trending_fallback=trending,
+    )
+    client = TestClient(create_app(services))
+    resp = client.get(
+        "/recommend",
+        params={"session_id": "cold_user", "product_group": "Garment Upper body", "max_price": 0.05},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["mode"] == "cold_start_trending"
+    assert body["history_len"] == 0
+    assert [x["article_id"] for x in body["items"]] == ["T1"]
+    assert "X-Process-Time-Ms" in resp.headers
+
+
+def test_api_unknown_sku_event_graceful_serving(tmp_path: Path) -> None:
+    from qdrant_client.models import Distance, PointStruct, VectorParams
+
+    q_client = QdrantClient(":memory:")
+    vec = [1.0] + [0.0] * 127
+    q_client.create_collection(COLLECTION_NAME, vectors_config=VectorParams(size=128, distance=Distance.COSINE))
+    q_client.upsert(
+        COLLECTION_NAME,
+        points=[
+            PointStruct(
+                id=1,
+                vector=vec,
+                payload={
+                    "article_id": "KNOWN_1",
+                    "prod_name": "Known Tee",
+                    "product_group_name": "Garment Upper body",
+                    "department_name": "Jersey",
+                    "price": 0.02,
+                    "train_tx_count": 10,
+                },
+            )
+        ],
+    )
+    services = AppServices(
+        session_store=SessionStore(InMemoryRedis()),
+        retriever=Stage1Retriever(q_client, onnx_path=None, item_vectors={"KNOWN_1": np.array(vec, dtype=np.float32)}),
+        ranker=Stage2Ranker(model_path=None),
+        trending_fallback=[],
+    )
+    client = TestClient(create_app(services))
+    ev = client.post("/event", json={"session_id": "u_unk", "article_id": "UNKNOWN_SKU_999", "price": 0.03})
+    assert ev.status_code == 200
+    assert ev.json()["history_len"] == 1
+
+    rec = client.get("/recommend", params={"session_id": "u_unk", "top_k": 5})
+    assert rec.status_code == 200
+    body = rec.json()
+    assert body["mode"] == "two_stage_personalized"
+    assert body["items"][0]["article_id"] == "KNOWN_1"
+    assert set(body["latency_ms"].keys()) == {"redis", "onnx", "qdrant", "lightgbm", "total"}
