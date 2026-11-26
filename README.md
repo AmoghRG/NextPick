@@ -54,6 +54,13 @@ Evaluated on **35,576 active SKUs** (`1,678,323` train / `255,241` val / `240,31
 - **`POST /event`:** `7 ms` median · `40 ms` p95
 - **Aggregated (`/event` + `/recommend`):** `17 ms` median · `140 ms` p95
 
+### Evaluation & Reproducibility Audit
+- **Raw Metrics Output:** [`docs/ablation_metrics.json`](docs/ablation_metrics.json) (exported directly from Kaggle Week 8 evaluation)
+- **Temporal Split & Causal History:** [`src/data/temporal_split.py`](src/data/temporal_split.py) (`ROWS BETWEEN 20 PRECEDING AND 1 PRECEDING`)
+- **Metric Definitions:** [`src/eval/metrics.py`](src/eval/metrics.py) (per-user `Recall@50`, `NDCG@10`, `MRR@10`)
+- **Training & Stage-2 Script:** [`notebooks/kaggle_train_pipeline.py`](notebooks/kaggle_train_pipeline.py)
+- **Load Test Script:** [`bench/locustfile.py`](bench/locustfile.py) (`make bench`)
+
 ---
 
 ## Quickstart
