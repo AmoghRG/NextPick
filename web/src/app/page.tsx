@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 interface RecommendedItem {
   article_id: string;
@@ -106,21 +106,26 @@ export default function HomePage() {
   const [data, setData] = useState<RecommendResponse | null>(null);
   const [clickedTrail, setClickedTrail] = useState<RecommendedItem[]>([]);
   const [apiOnline, setApiOnline] = useState(true);
+  const [eventError, setEventError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const reqSeqRef = useRef(0);
 
   const fetchRecommendations = useCallback(
     async (sid: string, grp: string, priceCap: string) => {
+      const seq = ++reqSeqRef.current;
       setLoading(true);
       try {
         const params = new URLSearchParams({ session_id: sid, top_k: "10" });
         if (grp) params.set("product_group", grp);
         if (priceCap) params.set("max_price", priceCap);
         const res = await fetch(`${API_BASE}/recommend?${params.toString()}`);
-        if (!res.ok) throw new Error("API error");
+        if (!res.ok) throw new Error(`API error (${res.status})`);
         const json: RecommendResponse = await res.json();
+        if (seq !== reqSeqRef.current) return;
         setData(json);
         setApiOnline(true);
       } catch {
+        if (seq !== reqSeqRef.current) return;
         setApiOnline(false);
         setData({
           session_id: sid,
@@ -130,7 +135,7 @@ export default function HomePage() {
           latency_ms: { redis: 0, onnx: 0, qdrant: 0, lightgbm: 0, total: 0 },
         });
       } finally {
-        setLoading(false);
+        if (seq === reqSeqRef.current) setLoading(false);
       }
     },
     [clickedTrail.length]
@@ -141,9 +146,10 @@ export default function HomePage() {
   }, [sessionId, productGroup, maxPrice, fetchRecommendations]);
 
   const handleProductClick = async (item: RecommendedItem) => {
+    setEventError(null);
     setClickedTrail((prev) => [item, ...prev].slice(0, 20));
     try {
-      await fetch(`${API_BASE}/event`, {
+      const evRes = await fetch(`${API_BASE}/event`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -154,8 +160,11 @@ export default function HomePage() {
           product_group_name: item.product_group_name,
         }),
       });
-    } catch {
-      // Offline preview fallback handled by fetchRecommendations
+      if (!evRes.ok) {
+        throw new Error(`POST /event failed with HTTP ${evRes.status}`);
+      }
+    } catch (err) {
+      setEventError(err instanceof Error ? err.message : "Failed to record click event");
     }
     await fetchRecommendations(sessionId, productGroup, maxPrice);
   };
@@ -210,6 +219,11 @@ export default function HomePage() {
       </header>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        {eventError && (
+          <div className="lg:col-span-12 bg-rose-950/70 border border-rose-700/60 text-rose-200 text-xs rounded-lg px-4 py-2 font-mono">
+            {eventError}
+          </div>
+        )}
         {/* Left Panel: Storefront Recommendations */}
         <section className="lg:col-span-7">
           <div className="flex items-center justify-between mb-3">

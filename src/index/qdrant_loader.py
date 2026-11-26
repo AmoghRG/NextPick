@@ -25,10 +25,25 @@ def build_image_url(article_id: str) -> str:
     return f"https://images.hm.com/assets/{padded[:3]}/{padded}.jpg"
 
 
-def ensure_collection(client: QdrantClient, collection: str = COLLECTION_NAME, vector_size: int = 128) -> None:
-    """Create or recreate Qdrant collection with HNSW config and payload indexes."""
+def ensure_collection(
+    client: QdrantClient,
+    collection: str = COLLECTION_NAME,
+    vector_size: int = 128,
+    recreate: bool = False,
+) -> None:
+    """Ensure Qdrant collection exists non-destructively (verify dimensions, upsert safely)."""
     if client.collection_exists(collection):
-        client.delete_collection(collection)
+        if recreate:
+            client.delete_collection(collection)
+        else:
+            info = client.get_collection(collection)
+            existing_cfg = info.config.params.vectors
+            existing_size = getattr(existing_cfg, "size", None)
+            if existing_size is not None and existing_size != vector_size:
+                raise ValueError(
+                    f"Collection '{collection}' vector size mismatch: expected {vector_size}, got {existing_size}"
+                )
+            return
 
     client.create_collection(
         collection_name=collection,
@@ -46,8 +61,9 @@ def load_catalog_to_qdrant(
     embeddings_parquet: Path,
     collection: str = COLLECTION_NAME,
     batch_size: int = 256,
+    recreate: bool = False,
 ) -> int:
-    """Join catalog metadata with 128-d embeddings and batch-upsert into Qdrant."""
+    """Join catalog metadata with 128-d embeddings and non-destructively upsert into Qdrant."""
     cat_df = pd.read_parquet(catalog_parquet)
     emb_df = pd.read_parquet(embeddings_parquet)
     merged = cat_df.merge(emb_df, on="article_id", how="inner")
@@ -56,7 +72,7 @@ def load_catalog_to_qdrant(
         return 0
 
     vec_size = len(merged["embedding"].iloc[0])
-    ensure_collection(client, collection=collection, vector_size=vec_size)
+    ensure_collection(client, collection=collection, vector_size=vec_size, recreate=recreate)
 
     total = 0
     points: list[PointStruct] = []
@@ -98,6 +114,7 @@ def main() -> None:
     parser.add_argument("--qdrant-api-key", default=os.getenv("QDRANT_API_KEY", ""))
     parser.add_argument("--catalog", type=Path, default=Path("artifacts/catalog.parquet"))
     parser.add_argument("--embeddings", type=Path, default=Path("artifacts/item_embeddings.parquet"))
+    parser.add_argument("--recreate", action="store_true", help="Drop and recreate collection before indexing.")
     args = parser.parse_args()
 
     client = QdrantClient(
@@ -106,7 +123,7 @@ def main() -> None:
         timeout=60,
         check_compatibility=False,
     )
-    count = load_catalog_to_qdrant(client, args.catalog, args.embeddings)
+    count = load_catalog_to_qdrant(client, args.catalog, args.embeddings, recreate=args.recreate)
     print(f"Indexed {count} items into Qdrant collection '{COLLECTION_NAME}'.")
 
 

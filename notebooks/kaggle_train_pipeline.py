@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import math
+import random
 from pathlib import Path
 
 import duckdb
@@ -42,6 +43,16 @@ WORK_DIR.mkdir(parents=True, exist_ok=True)
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 MAX_SEQ_LEN = 20
 EMBED_DIM = 128
+SEED = 42
+
+
+def set_global_seed(seed: int = SEED) -> None:
+    """Set deterministic seeds across Python, NumPy, and PyTorch."""
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
 
 
 def step1_temporal_split() -> dict[str, int]:
@@ -104,6 +115,7 @@ def step1_temporal_split() -> dict[str, int]:
         con.execute(f"COPY (SELECT * FROM enriched_tx WHERE {pred}) TO '{out}' (FORMAT PARQUET)")
         counts[name] = con.execute(f"SELECT COUNT(*) FROM enriched_tx WHERE {pred}").fetchone()[0]
 
+    # Active SKUs known strictly BEFORE Week 8 starts (no future Week-8 catalog leakage)
     cat_out = ART_DIR / "catalog.parquet"
     con.execute(
         f"""
@@ -117,12 +129,14 @@ def step1_temporal_split() -> dict[str, int]:
                 COALESCE(CAST(a.department_name AS VARCHAR), 'unknown') AS department_name,
                 COALESCE(CAST(a.detail_desc AS VARCHAR), '') AS detail_desc,
                 COALESCE(AVG(w.price), 0.02) AS avg_price,
-                COUNT(w.article_id) AS train_tx_count
+                COUNT(CASE WHEN w.t_dat < {train_end} THEN 1 END) AS train_tx_count
             FROM raw_art a
-            INNER JOIN (SELECT DISTINCT article_id FROM windowed_tx) act
+            INNER JOIN (
+                SELECT DISTINCT article_id FROM enriched_tx WHERE t_dat < {val_end}
+            ) act
                 ON CAST(a.article_id AS VARCHAR) = act.article_id
             LEFT JOIN enriched_tx w
-                ON CAST(a.article_id AS VARCHAR) = w.article_id AND w.t_dat < {train_end}
+                ON CAST(a.article_id AS VARCHAR) = w.article_id AND w.t_dat < {val_end}
             GROUP BY 1, 2, 3, 4, 5, 6, 7
         ) TO '{cat_out}' (FORMAT PARQUET)
         """
@@ -303,7 +317,8 @@ def step4_train_two_tower(
     if len(ds) == 0:
         raise ValueError("InteractionDataset is empty; cannot train Two-Tower.")
     effective_bs = min(batch_size, len(ds))
-    loader = DataLoader(ds, batch_size=effective_bs, shuffle=True, drop_last=len(ds) > effective_bs)
+    gen = torch.Generator().manual_seed(SEED)
+    loader = DataLoader(ds, batch_size=effective_bs, shuffle=True, drop_last=len(ds) > effective_bs, generator=gen)
 
     for epoch in range(1, epochs + 1):
         item_tower.train()
@@ -438,6 +453,7 @@ def step5_stage2_lightgbm(
 
 
 def run_all() -> None:
+    set_global_seed(SEED)
     step1_temporal_split()
     catalog_df = pd.read_parquet(ART_DIR / "catalog.parquet")
     train_df = pd.read_parquet(WORK_DIR / "train.parquet")

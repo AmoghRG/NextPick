@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import time
 from pathlib import Path
@@ -50,7 +51,7 @@ def build_default_services() -> AppServices:
     qdrant_url = os.getenv("QDRANT_URL", "http://localhost:6333")
     qdrant_api_key = os.getenv("QDRANT_API_KEY") or None
     redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
-    allow_inmemory = os.getenv("NEXTPICK_ALLOW_INMEMORY_REDIS", "1") == "1"
+    allow_inmemory = os.getenv("NEXTPICK_ALLOW_INMEMORY_REDIS", "0") == "1"
 
     try:
         r_client = redis.from_url(redis_url, decode_responses=True)
@@ -58,6 +59,9 @@ def build_default_services() -> AppServices:
     except Exception:
         if not allow_inmemory:
             raise
+        logging.getLogger("nextpick").warning(
+            "Redis unavailable; falling back to process-local InMemoryRedis (dev/demo only)."
+        )
         r_client = InMemoryRedis()
 
     q_client = QdrantClient(url=qdrant_url, api_key=qdrant_api_key, check_compatibility=False)
@@ -141,7 +145,7 @@ def create_app(services: AppServices | None = None) -> FastAPI:
 
         onnx_ok = svc.retriever._ort is not None
         lgbm_ok = svc.ranker._booster is not None
-        status = "ok" if (redis_ok and not redis_inmemory and qdrant_ok and onnx_ok) else "degraded"
+        status = "ok" if (redis_ok and not redis_inmemory and qdrant_ok and onnx_ok and lgbm_ok) else "degraded"
         return {
             "status": status,
             "dependencies": {

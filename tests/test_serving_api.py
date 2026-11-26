@@ -168,3 +168,24 @@ def test_retriever_fallback_masked_pooling_and_unknown_items() -> None:
     # Single known item with unknown item ignores unknown and normalizes cleanly
     emb = retriever.encode_user(["known", "missing_id"])
     assert np.allclose(emb, v0, atol=1e-5)
+
+
+def test_qdrant_ensure_collection_is_non_destructive(tmp_path: Path) -> None:
+    import pytest
+    from qdrant_client.models import PointStruct
+    from src.index.qdrant_loader import ensure_collection
+
+    q_client = QdrantClient(":memory:")
+    ensure_collection(q_client, collection="test_col", vector_size=128)
+    q_client.upsert(
+        collection_name="test_col",
+        points=[PointStruct(id=1, vector=[0.1] * 128, payload={"article_id": "a1"})],
+    )
+
+    # Re-running ensure_collection without recreate=True must preserve existing points
+    ensure_collection(q_client, collection="test_col", vector_size=128, recreate=False)
+    assert q_client.get_collection("test_col").points_count == 1
+
+    # Mismatched vector size must raise ValueError instead of silently corrupting
+    with pytest.raises(ValueError, match="vector size mismatch"):
+        ensure_collection(q_client, collection="test_col", vector_size=64, recreate=False)
