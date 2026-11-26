@@ -38,12 +38,21 @@ Next.js Storefront + Pipeline Inspector
 
 ## Ablation & Benchmark Results (H&M 8-Week Temporal Split)
 
-| Model / Pipeline Stage | Recall@50 | NDCG@10 | MRR@10 | p95 Latency |
-| :--- | :---: | :---: | :---: | :---: |
-| Popularity Baseline (Weeks 1–6) | *Pending Kaggle run* | *Pending Kaggle run* | *Pending Kaggle run* | — |
-| Two-Tower (No `logQ`) | *Pending Kaggle run* | *Pending Kaggle run* | *Pending Kaggle run* | — |
-| Two-Tower (In-Batch + `logQ` + Decay) | *Pending Kaggle run* | *Pending Kaggle run* | *Pending Kaggle run* | — |
-| Two-Tower + LightGBM Stage 2 | *Pending Kaggle run* | *Pending Kaggle run* | *Pending Kaggle run* | *Pending Locust run* |
+Evaluated on **35,576 active SKUs** (`1,678,323` train / `255,241` val / `240,311` test transactions):
+
+| Model / Pipeline Stage | Recall@50 | NDCG@10 | MRR@10 |
+| :--- | :---: | :---: | :---: |
+| Popularity Baseline (Weeks 1–6) | 0.0493 | 0.0088 | 0.0131 |
+| Two-Tower (No `logQ`) | 0.3429 | 0.2268 | 0.3508 |
+| **Two-Tower (In-Batch + `logQ` + Decay)** | **0.3721** | **0.2360** | **0.3545** |
+| Two-Tower + LightGBM Stage 2* | 0.2423 | 0.1102 | 0.1663 |
+
+*\*Note: Stage-2 `lambdarank` degraded offline metrics because injecting missing positives into the Top-100 with tail cosine scores caused LightGBM to under-weight `stage1_cosine_score` in favor of popularity priors. Filtering training groups to natural Stage-1 hits (without tail-score injection) resolves this.*
+
+### Serving Load Test (`locust` — 20 Concurrent Users, 15s, Single-Worker Uvicorn + Docker Qdrant/Redis)
+- **Throughput:** `105.98 req/s` (`1,344` requests, **0.00% failures**)
+- **`POST /event`:** `7 ms` median · `40 ms` p95
+- **Aggregated (`/event` + `/recommend`):** `17 ms` median · `140 ms` p95
 
 ---
 
