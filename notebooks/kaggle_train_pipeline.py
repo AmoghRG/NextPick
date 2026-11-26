@@ -208,7 +208,7 @@ class InteractionDataset(Dataset):
         self.hist_mask = np.zeros((n, MAX_SEQ_LEN), dtype=np.float32)
 
         for i, hist in enumerate(filtered["hist_article_ids"]):
-            if not hist:
+            if hist is None or len(hist) == 0:
                 continue
             # Reverse so index 0 is the most recent interaction for exponential decay
             recent = [art_to_idx[a] for a in reversed(hist) if a in art_to_idx][:MAX_SEQ_LEN]
