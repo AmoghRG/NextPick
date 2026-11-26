@@ -257,6 +257,19 @@ def test_qdrant_loader_fails_fast_on_invalid_inputs(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="batch_size must be positive"):
         load_catalog_to_qdrant(q_client, c_ok, e_ok, batch_size=0)
 
+    # Null/blank article_id and negative avg_price must fail fast
+    cat_null = pd.DataFrame([{"article_id": None, "avg_price": 0.02}, {"article_id": "SKU_B", "avg_price": 0.03}])
+    c_null = tmp_path / "c_null.parquet"
+    cat_null.to_parquet(c_null, index=False)
+    with pytest.raises(ValueError, match="Null article_id"):
+        load_catalog_to_qdrant(q_client, c_null, e_ok)
+
+    cat_neg_price = pd.DataFrame([{"article_id": "SKU_A", "avg_price": -1.0}, {"article_id": "SKU_B", "avg_price": 0.03}])
+    c_neg = tmp_path / "c_neg.parquet"
+    cat_neg_price.to_parquet(c_neg, index=False)
+    with pytest.raises(ValueError, match="avg_price"):
+        load_catalog_to_qdrant(q_client, c_neg, e_ok)
+
 
 def test_dependency_failure_modes(monkeypatch, tmp_path: Path) -> None:
     import pytest
