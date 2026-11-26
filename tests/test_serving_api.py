@@ -134,6 +134,7 @@ def test_end_to_end_qdrant_onnx_fastapi_flow(tmp_path: Path) -> None:
     assert r_rec.status_code == 200
     body = r_rec.json()
     assert body["mode"] == "two_stage_personalized"
+    assert body["ranker_mode"] == "heuristic_fallback"
     assert body["history_len"] == 1
     assert len(body["items"]) == 5
     assert all(item["product_group_name"] == "Upper" for item in body["items"])
@@ -189,3 +190,33 @@ def test_qdrant_ensure_collection_is_non_destructive(tmp_path: Path) -> None:
     # Mismatched vector size must raise ValueError instead of silently corrupting
     with pytest.raises(ValueError, match="vector size mismatch"):
         ensure_collection(q_client, collection="test_col", vector_size=64, recreate=False)
+
+
+def test_qdrant_stable_ids_and_stale_pruning(tmp_path: Path) -> None:
+    from src.index.qdrant_loader import stable_point_id
+
+    assert stable_point_id("SKU_A") == stable_point_id("SKU_A")
+    assert stable_point_id("SKU_A") != stable_point_id("SKU_B")
+
+    q_client = QdrantClient(":memory:")
+    cat1 = pd.DataFrame([{"article_id": "SKU_A", "prod_name": "A"}, {"article_id": "SKU_B", "prod_name": "B"}])
+    emb1 = pd.DataFrame({"article_id": ["SKU_A", "SKU_B"], "embedding": [[0.1] * 128, [0.2] * 128]})
+    c1, e1 = tmp_path / "c1.parquet", tmp_path / "e1.parquet"
+    cat1.to_parquet(c1, index=False)
+    emb1.to_parquet(e1, index=False)
+
+    assert load_catalog_to_qdrant(q_client, c1, e1) == 2
+    assert q_client.get_collection(COLLECTION_NAME).points_count == 2
+
+    # Re-index with SKU_B removed and SKU_C added -> stale SKU_B must be pruned
+    cat2 = pd.DataFrame([{"article_id": "SKU_C", "prod_name": "C"}, {"article_id": "SKU_A", "prod_name": "A2"}])
+    emb2 = pd.DataFrame({"article_id": ["SKU_C", "SKU_A"], "embedding": [[0.3] * 128, [0.1] * 128]})
+    c2, e2 = tmp_path / "c2.parquet", tmp_path / "e2.parquet"
+    cat2.to_parquet(c2, index=False)
+    emb2.to_parquet(e2, index=False)
+
+    assert load_catalog_to_qdrant(q_client, c2, e2, prune_stale=True) == 2
+    assert q_client.get_collection(COLLECTION_NAME).points_count == 2
+    pts, _ = q_client.scroll(collection_name=COLLECTION_NAME, limit=10, with_payload=True)
+    ids_present = {p.payload["article_id"] for p in pts}
+    assert ids_present == {"SKU_A", "SKU_C"}

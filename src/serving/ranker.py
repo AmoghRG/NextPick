@@ -21,6 +21,10 @@ class Stage2Ranker:
 
             self._booster = lgb.Booster(model_file=str(model_path))
 
+    @property
+    def mode(self) -> str:
+        return "trained_lightgbm" if self._booster is not None else "heuristic_fallback"
+
     def rank(
         self,
         history: Sequence[SessionEvent],
@@ -46,9 +50,8 @@ class Stage2Ranker:
         if self._booster is not None:
             scores = self._booster.predict(feats)
         else:
-            # Deterministic heuristic fallback when model artifact isn't present in tests:
-            # stage1_cosine + dept_affinity * 0.15 - price_abs_diff * 0.5
-            scores = feats[:, 0] + 0.15 * feats[:, 4] - 0.5 * feats[:, 3]
+            # Bounded heuristic fallback (tanh keeps price penalty within [0, 0.3] regardless of price scale)
+            scores = feats[:, 0] + 0.05 * np.tanh(feats[:, 4]) - 0.3 * np.tanh(feats[:, 3])
 
         order = np.argsort(-scores)[:top_k]
         ranked: list[dict] = []
