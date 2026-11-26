@@ -15,13 +15,13 @@ Next.js Storefront + Pipeline Inspector
         │
         └── GET /recommend
                 ├── 0 clicks ──► Cold-Start Trending Cache
-                └── >=1 click ─► ONNX User Tower (recency-decay pooling)
+                └── >=1 click ─► ONNX User Tower (masked self-attention + recency decay)
                                       │
                                       ▼
                                  Qdrant HNSW (Top-100 + with_payload=True)
                                       │
                                       ▼
-                                 LightGBM lambdarank (13 zero-skew features)
+                                 LightGBM lambdarank (14 zero-skew features)
                                       │
                                       ▼
                                  Top-10 Ranked + Rank Deltas + Latency ms
@@ -31,7 +31,7 @@ Next.js Storefront + Pipeline Inspector
 
 ## Key Engineering Decisions
 
-- **Cold-Start-Safe Two-Tower:** Avoids pure ID embeddings; Item Tower combines frozen `all-MiniLM-L6-v2` text embeddings + categorical/price embeddings, while User Tower applies exponential recency-decay pooling ($w_k = \exp(-\lambda k)$) over the last 20 interactions.
+- **Cold-Start-Safe Two-Tower:** Avoids pure ID embeddings; Item Tower combines frozen `all-MiniLM-L6-v2` text embeddings + categorical/price embeddings, while User Tower applies **4-head masked self-attention + exponential recency-decay pooling** ($w_k = \exp(-\lambda k)$) over the last 20 interactions.
 - **Anti-Bias Training:** In-batch softmax with temperature ($\tau = 0.07$), **same-item collision masking** off-diagonal, and **`logQ` popularity correction**.
 - **Zero Train-Serving Skew:** Offline history computed in **DuckDB** (`ROWS BETWEEN 20 PRECEDING AND 1 PRECEDING`) matches the live **Redis** `LPUSH + LTRIM 0 19` window identically via shared feature logic in `src/models/stage2_features.py`.
 - **Single-Hop Stage-2 Metadata:** Item metadata (`price`, `department_name`, `product_group_name`, `train_tx_count`, `image_url`) is stored inside Qdrant payloads (`with_payload=True`) — zero extra DB lookups per `/recommend`.
@@ -49,15 +49,15 @@ Evaluated on a **date-level temporal split** (`ORDER BY t_dat, row_id`, predicti
 | Popularity Baseline (Weeks 1–6) | 0.0493 | 0.0088 | 0.0131 | 0.03% | 2,366.8 |
 | User Repurchase Baseline | 0.0793 | 0.0337 | 0.0426 | 60.56% | 1,802.1 |
 | ItemKNN Co-Visitation Baseline | 0.0611 | 0.0169 | 0.0222 | 44.70% | 1,208.4 |
-| Two-Tower (No `logQ` — collapses popular items) | 0.0037 | 0.0005 | 0.0007 | 81.01% | 104.7 |
-| Two-Tower (`In-Batch + logQ + Decay`) | 0.0204 | 0.0027 | 0.0038 | 39.36% | 891.4 |
-| **Two-Tower + LightGBM Stage 2 (13 features)** | **0.0259** | **0.0063** | **0.0092** | **27.62%** | **1,086.3** |
+| Two-Tower (No `logQ` — collapses popular items) | 0.0035 | 0.0006 | 0.0008 | 81.90% | 144.8 |
+| Two-Tower (`In-Batch + logQ + Attention + Decay`) | 0.0192 | 0.0028 | 0.0039 | 43.13% | 838.5 |
+| **Multi-Channel Stage 1 + LightGBM Stage 2 (14 features)** | **0.0618** | **0.0241** | **0.0317** | **45.76%** | **1,223.6** |
 
 > **Key takeaways from the full Week-8 evaluation (`68,984` users):**
-> - **`logQ` + Decay** lifts Two-Tower `Recall@50` by **5.5×** (`0.0037` → `0.0204`), while Stage-2 LightGBM more than doubles `NDCG@10` (`0.0027` → `0.0063`) and `MRR@10` (`0.0038` → `0.0092`).
-> - **Anti-bias & coverage:** Global Popularity covers just `0.03%` of the catalog (`Mean Pop@10 = 2,366.8`), whereas Two-Tower + LightGBM reaches `27.62%` catalog coverage (`Mean Pop@10 = 1,086.3`).
-> - **Honest baseline comparison:** On H&M's 7-day fashion horizon, simple **User Repurchase** (`0.0337` NDCG@10) and **ItemKNN** (`0.0169` NDCG@10) outperform a 3-epoch Two-Tower—consistent with H&M competition findings where repeat-purchase & co-visitation signals dominate short-horizon accuracy while Two-Tower handles cold-start & semantic retrieval.
-> - **Top Stage-2 LightGBM Gain Importances:** `is_repurchase` (`176,011`), `stage1_cosine_score` (`75,601`), `steps_since_same_dept` (`33,201`), `item_log_popularity` (`24,331`), `item_price` (`18,757`), `user_avg_price` (`15,555`), `sales_channel_id` (`14,839`), `dept_affinity_count` (`13,940`), `price_zscore` (`11,918`).
+> - **`logQ` + Attention + Decay** lifts Two-Tower `Recall@50` by **5.5×** (`0.0035` → `0.0192`), and **Multi-Channel Stage-1 (Two-Tower ANN + Repurchase + ItemKNN) + 14-feature LightGBM Stage 2** jumps to **`0.0618` Recall@50 / `0.0241` NDCG@10 / `0.0317` MRR@10**—beating **Popularity** by **2.74×** and **ItemKNN** by **+42.8%** on `NDCG@10`.
+> - **Anti-bias & coverage:** Global Popularity covers just `0.03%` of the catalog (`Mean Pop@10 = 2,366.8`), whereas the full 2-stage pipeline reaches **`45.76%` catalog coverage** (`Mean Pop@10 = 1,223.6`).
+> - **Honest baseline comparison:** Multi-channel Stage 2 beats both Popularity and ItemKNN across all accuracy & coverage metrics, while simple **User Repurchase** (`0.0337` NDCG@10) remains strongest on 7-day repeat fashion purchases.
+> - **Top Stage-2 LightGBM Gain Importances:** `is_repurchase` (`189,394`), `item_knn_score` (`144,446`), `steps_since_same_dept` (`105,124`), `stage1_cosine_score` (`85,755`), `user_avg_price` (`37,200`), `item_log_popularity` (`35,391`), `item_price` (`30,604`), `price_abs_diff` (`21,831`), `price_zscore` (`21,172`).
 
 ### Serving Load Test (`locust` — 20 Concurrent Users, 60s, Single-Worker Uvicorn + Docker Qdrant/Redis)
 - **Throughput:** `86.96 req/s` (`5,165` requests, **0.00% failures**)

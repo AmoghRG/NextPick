@@ -24,42 +24,43 @@
     "mean_popularity@10": 1208.3640336889714
   },
   "two_tower_no_logq": {
-    "recall@50": 0.0036846760513706534,
-    "ndcg@10": 0.0005229688900830981,
-    "mrr@10": 0.0007333768676978705,
+    "recall@50": 0.003514952685689464,
+    "ndcg@10": 0.0005769521345669289,
+    "mrr@10": 0.0008092111076136368,
     "num_users": 68984,
-    "coverage@10": 0.8101192375757927,
-    "mean_popularity@10": 104.67667050432858
+    "coverage@10": 0.819025791290725,
+    "mean_popularity@10": 144.7851602099251
   },
   "two_tower_logq_decay": {
-    "recall@50": 0.02038427491379178,
-    "ndcg@10": 0.0027079198792873873,
-    "mrr@10": 0.0038195709978297203,
+    "recall@50": 0.01921707729595966,
+    "ndcg@10": 0.002780171837416763,
+    "mrr@10": 0.003878337788012483,
     "num_users": 68984,
-    "coverage@10": 0.39362905799413966,
-    "mean_popularity@10": 891.3888443653653
+    "coverage@10": 0.4313441062984131,
+    "mean_popularity@10": 838.4847445462837
   },
   "two_tower_plus_lightgbm": {
-    "recall@50": 0.02585756374303849,
-    "ndcg@10": 0.006307743628754669,
-    "mrr@10": 0.009229337053542676,
+    "recall@50": 0.061848856890951646,
+    "ndcg@10": 0.02407003504771037,
+    "mrr@10": 0.031656587264771635,
     "num_users": 68984,
-    "coverage@10": 0.2762192114653747,
-    "mean_popularity@10": 1086.3447301924314
+    "coverage@10": 0.4576285938089298,
+    "mean_popularity@10": 1223.5937112184326
   },
   "stage2_feature_importance_gain": {
-    "stage1_cosine_score": 75600.72374629974,
-    "item_price": 18756.856382369995,
-    "user_avg_price": 15555.24360203743,
-    "price_abs_diff": 9216.297917604446,
-    "dept_affinity_count": 13939.520602703094,
-    "group_affinity_count": 4429.209730625153,
-    "steps_since_same_dept": 33201.45908379555,
-    "item_log_popularity": 24330.63893342018,
-    "sales_channel_id": 14838.931347608566,
-    "price_zscore": 11917.501618146896,
-    "steps_since_same_group": 4310.499031543732,
-    "is_repurchase": 176011.32545232773,
-    "hist_repurchase_count": 2742.104394197464
+    "stage1_cosine_score": 85754.83564460278,
+    "item_price": 30603.9536652565,
+    "user_avg_price": 37199.803626298904,
+    "price_abs_diff": 21830.77204656601,
+    "dept_affinity_count": 20491.24605512619,
+    "group_affinity_count": 10514.36523592472,
+    "steps_since_same_dept": 105123.76108050346,
+    "item_log_popularity": 35390.96235883236,
+    "sales_channel_id": 13157.112196683884,
+    "price_zscore": 21172.27974498272,
+    "steps_since_same_group": 6920.487471818924,
+    "is_repurchase": 189393.94675838947,
+    "hist_repurchase_count": 2877.2865542173386,
+    "item_knn_score": 144445.6928128004
   }
 }
