@@ -40,14 +40,13 @@ Next.js Storefront + Pipeline Inspector
 
 ## Ablation & Benchmark Results (H&M 8-Week Temporal Split)
 
-Evaluated on **35,576 active SKUs** (`1,678,323` train / `255,241` val / `240,311` test transactions):
+Evaluated strictly on **future Week 8 purchases** (`head(1)` prediction timestamp — zero Week-8 history leakage) across **35,576 active SKUs** (`1,678,323` train / `255,241` val / `240,311` test transactions):
 
 | Model / Pipeline Stage | Recall@50 | NDCG@10 | MRR@10 |
 | :--- | :---: | :---: | :---: |
 | Popularity Baseline (Weeks 1–6) | 0.0493 | 0.0088 | 0.0131 |
-| Two-Tower (No `logQ`) | 0.3429 | 0.2268 | 0.3508 |
-| Two-Tower (In-Batch + `logQ` + Decay) | 0.3721 | 0.2360 | 0.3545 |
-| **Two-Tower + LightGBM Stage 2** | **0.3834** | **0.2493** | **0.3796** |
+| Two-Tower (`In-Batch + logQ + Decay`) | 0.0711 | 0.0236 | 0.0291 |
+| **Two-Tower + LightGBM Stage 2** | **0.0773** | **0.0267** | **0.0340** |
 
 ### Serving Load Test (`locust` — 20 Concurrent Users, 15s, Single-Worker Uvicorn + Docker Qdrant/Redis)
 - **Throughput:** `105.98 req/s` (`1,344` requests, **0.00% failures**)
