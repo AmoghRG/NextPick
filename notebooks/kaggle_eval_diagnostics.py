@@ -31,7 +31,12 @@ from src.baselines.classical import (
     recommend_repurchase,
     score_item_knn_candidates,
 )
-from src.eval.diagnostics import bootstrap_ci, evaluate_candidate_pool, paired_comparison
+from src.eval.diagnostics import (
+    bootstrap_ci,
+    evaluate_candidate_pool,
+    paired_comparison,
+    reciprocal_rank_fusion,
+)
 from src.eval.metrics import evaluate_recommendations, ndcg_at_k, recall_at_k
 from src.models.stage2_features import compute_stage2_features_for_candidates
 
@@ -225,7 +230,7 @@ def run_eval(data_dir: Path = DATA_DIR, art_dir: Path = ART_DIR, out_path: Path 
         tt_scores = booster.predict(tt_feats)
         preds_tt_lgb[uid] = [ann_ids[idx] for idx in np.argsort(-tt_scores)]
 
-        # 2) Multi-Channel Unranked & Multi-Channel + LightGBM
+        # 2) Multi-Channel Unranked (Reciprocal Rank Fusion) & Multi-Channel + LightGBM
         score_map = dict(zip(ann_ids, ann_scores))
         merged_ids: list[str] = []
         seen: set[str] = set()
@@ -233,7 +238,7 @@ def run_eval(data_dir: Path = DATA_DIR, art_dir: Path = ART_DIR, out_path: Path 
             if aid not in seen and aid in cat_lookup:
                 seen.add(aid)
                 merged_ids.append(aid)
-        preds_mc_unranked[uid] = merged_ids[:50]
+        preds_mc_unranked[uid] = reciprocal_rank_fusion([ann_ids, rep_top20, knn_top20], k=60, top_n=50)
 
         mc_cands = []
         for aid in merged_ids:
