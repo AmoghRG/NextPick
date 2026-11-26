@@ -248,6 +248,15 @@ def test_qdrant_loader_fails_fast_on_invalid_inputs(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="Non-finite"):
         load_catalog_to_qdrant(q_client, c_ok, e_nan)
 
+    # Zero-dimensional embedding and invalid batch_size must fail fast
+    emb_empty_vec = pd.DataFrame({"article_id": ["SKU_A", "SKU_B"], "embedding": [[], [0.2] * 128]})
+    e_zero = tmp_path / "e_zero.parquet"
+    emb_empty_vec.to_parquet(e_zero, index=False)
+    with pytest.raises(ValueError, match="Invalid embedding vector shape"):
+        load_catalog_to_qdrant(q_client, c_ok, e_zero)
+    with pytest.raises(ValueError, match="batch_size must be positive"):
+        load_catalog_to_qdrant(q_client, c_ok, e_ok, batch_size=0)
+
 
 def test_dependency_failure_modes(monkeypatch, tmp_path: Path) -> None:
     import pytest

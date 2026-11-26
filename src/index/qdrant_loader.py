@@ -111,6 +111,8 @@ def validate_catalog_and_embeddings(cat_df: pd.DataFrame, emb_df: pd.DataFrame) 
     merged = merged.merge(emb_clean, on="article_id", how="inner")
 
     first_vec = np.asarray(merged["embedding"].iloc[0], dtype=np.float32)
+    if first_vec.ndim != 1 or first_vec.shape[0] <= 0:
+        raise ValueError(f"Invalid embedding vector shape: {first_vec.shape}")
     vec_size = int(first_vec.shape[0])
     for art_id, raw_vec in zip(merged["article_id"], merged["embedding"]):
         arr = np.asarray(raw_vec, dtype=np.float32)
@@ -132,6 +134,8 @@ def load_catalog_to_qdrant(
     prune_stale: bool = True,
 ) -> int:
     """Validate inputs, then non-destructively upsert catalog + embeddings into Qdrant."""
+    if batch_size <= 0:
+        raise ValueError(f"batch_size must be positive, got {batch_size}")
     cat_df = pd.read_parquet(catalog_parquet)
     emb_df = pd.read_parquet(embeddings_parquet)
     merged, vec_size = validate_catalog_and_embeddings(cat_df, emb_df)

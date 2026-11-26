@@ -42,6 +42,8 @@ Next.js Storefront + Pipeline Inspector
 
 Evaluated on a **date-level temporal split** (`ORDER BY t_dat, row_id`, predicting 7-day Week 8 future-horizon purchases from each user's first Week-8 interaction using strictly Weeks 1–7 history) across **35,576 active SKUs** (`1,678,323` train / `255,241` val / `240,311` test transactions):
 
+> **Temporal evaluation limitation:** Interactions are ordered by date (`t_dat`) and a deterministic `row_id` tie-breaker. Since the H&M dataset does not contain precise intra-day timestamps, ordering among interactions on the same date is deterministic rather than true chronological order.
+
 | Model / Pipeline Stage | Recall@50 | NDCG@10 | MRR@10 |
 | :--- | :---: | :---: | :---: |
 | Popularity Baseline (Weeks 1–6) | 0.0493 | 0.0088 | 0.0131 |
