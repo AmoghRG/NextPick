@@ -411,3 +411,102 @@ def test_api_unknown_sku_event_graceful_serving(tmp_path: Path) -> None:
     assert body["mode"] == "two_stage_personalized"
     assert body["items"][0]["article_id"] == "KNOWN_1"
     assert set(body["latency_ms"].keys()) == {"redis", "onnx", "qdrant", "lightgbm", "total"}
+
+
+def test_early_session_diversity_and_segment_alignment() -> None:
+    from src.serving.main import _diversify_personalized
+
+    services = AppServices(
+        session_store=SessionStore(InMemoryRedis()),
+        retriever=Stage1Retriever(QdrantClient(":memory:"), onnx_path=None, item_vectors={}),
+        ranker=Stage2Ranker(model_path=None),
+        trending_fallback=[],
+        article_segments={
+            "M_SH1": "Menswear",
+            "M_SH2": "Menswear",
+            "M_SH3": "Menswear",
+            "W_DR1": "Ladieswear",
+            "M_HD1": "Menswear",
+            "M_TR1": "Menswear",
+        },
+        segment_catalog={
+            "Menswear": [
+                {
+                    "article_id": "M_HD1",
+                    "prod_name": "Men Hoodie",
+                    "product_group_name": "Garment Upper body",
+                    "index_group_name": "Menswear",
+                    "department_name": "Jersey",
+                    "price": 0.03,
+                    "stage1_rank": 101,
+                    "stage2_rank": 101,
+                },
+                {
+                    "article_id": "M_TR1",
+                    "prod_name": "Men Chino",
+                    "product_group_name": "Garment Lower body",
+                    "index_group_name": "Menswear",
+                    "department_name": "Trousers",
+                    "price": 0.04,
+                    "stage1_rank": 101,
+                    "stage2_rank": 101,
+                },
+            ]
+        },
+    )
+
+    raw_ranked = [
+        {"article_id": "M_SH1", "prod_name": "Dario Shorts", "product_group_name": "Garment Lower body", "index_group_name": "Menswear", "department_name": "Shorts", "price": 0.02, "stage1_rank": 1},
+        {"article_id": "M_SH2", "prod_name": "Laurent Shorts", "product_group_name": "Garment Lower body", "index_group_name": "Menswear", "department_name": "Shorts", "price": 0.02, "stage1_rank": 2},
+        {"article_id": "M_SH2_ALT", "prod_name": "Laurent Shorts", "product_group_name": "Garment Lower body", "index_group_name": "Menswear", "department_name": "Shorts", "price": 0.02, "stage1_rank": 3},
+        {"article_id": "M_SH3", "prod_name": "Zen Shorts", "product_group_name": "Garment Lower body", "index_group_name": "Menswear", "department_name": "Shorts", "price": 0.02, "stage1_rank": 4},
+        {"article_id": "M_SH4", "prod_name": "Extra Shorts", "product_group_name": "Garment Lower body", "index_group_name": "Menswear", "department_name": "Shorts", "price": 0.02, "stage1_rank": 5},
+        {"article_id": "W_DR1", "prod_name": "Ladies Dress", "product_group_name": "Garment Full body", "index_group_name": "Ladieswear", "department_name": "Dress", "price": 0.03, "stage1_rank": 6},
+    ]
+    history = [SessionEvent(article_id="M_SH1", price=0.02, department_name="Shorts", product_group_name="Garment Lower body")]
+
+    out = _diversify_personalized(raw_ranked, history, services, top_k=4)
+    out_ids = [x["article_id"] for x in out]
+    # Clicked item excluded, duplicate colorway excluded, >2 Shorts capped, Menswear Hoodie & Chino blended in, Ladieswear excluded
+    assert "M_SH1" not in out_ids
+    assert "M_SH2_ALT" not in out_ids
+    assert "M_SH4" not in out_ids
+    assert "W_DR1" not in out_ids
+    assert "M_HD1" in out_ids
+    assert "M_TR1" in out_ids
+    assert [x["stage2_rank"] for x in out] == [1, 2, 3, 4]
+
+
+def test_build_default_services_diversifies_trending_and_segments(tmp_path: Path, monkeypatch) -> None:
+    from src.serving import main as serving_main
+
+    rows = []
+    segs = ["Ladieswear", "Divided", "Menswear", "Sport"]
+    groups = ["Garment Upper body", "Garment Lower body", "Socks & Tights", "Garment Full body"]
+    for i in range(24):
+        rows.append(
+            {
+                "article_id": f"SKU_{i:03d}",
+                "prod_name": f"Item {i // 2}",
+                "product_group_name": groups[i % len(groups)],
+                "index_group_name": segs[i % len(segs)],
+                "department_name": f"Dept_{i % 6}",
+                "avg_price": 0.02 + 0.001 * i,
+                "train_tx_count": 100 - i,
+            }
+        )
+    pd.DataFrame(rows).to_parquet(tmp_path / "catalog.parquet", index=False)
+    pd.DataFrame({"article_id": ["SKU_000"], "embedding": [[0.1] * 128]}).to_parquet(
+        tmp_path / "item_embeddings.parquet", index=False
+    )
+
+    monkeypatch.setenv("NEXTPICK_ARTIFACTS_DIR", str(tmp_path))
+    monkeypatch.setenv("NEXTPICK_ALLOW_INMEMORY_REDIS", "1")
+    monkeypatch.setenv("REDIS_URL", "redis://127.0.0.1:1/0")
+    monkeypatch.setattr(serving_main, "QdrantClient", lambda **kwargs: QdrantClient(":memory:"))
+
+    svc = serving_main.build_default_services()
+    assert len(svc.trending_fallback) >= 10
+    assert len({x["prod_name"] for x in svc.trending_fallback}) == len(svc.trending_fallback)
+    assert "Menswear" in svc.segment_catalog
+    assert svc.article_segments["SKU_002"] == "Menswear"
