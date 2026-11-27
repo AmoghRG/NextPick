@@ -7,6 +7,7 @@ interface RecommendedItem {
   prod_name: string;
   product_type_name?: string;
   product_group_name: string;
+  index_group_name?: string;
   department_name: string;
   colour_group_name?: string;
   price: number;
@@ -56,6 +57,12 @@ function formatInr(normPrice: number): string {
 }
 
 function inferSegmentBadge(item: RecommendedItem): string | null {
+  const idxGrp = (item.index_group_name ?? "").toLowerCase();
+  if (idxGrp === "ladieswear") return "Women";
+  if (idxGrp === "menswear") return "Men";
+  if (idxGrp === "divided") return "Youth/Divided";
+  if (idxGrp === "baby/children") return "Kids";
+  if (idxGrp === "sport") return "Sport";
   const text = `${item.department_name} ${item.prod_name ?? ""}`.toLowerCase();
   if (/\b(ladies|women|woman|mama|bra|skirt|dress|blouse|tights)\b/.test(text)) return "Women";
   if (/\b(mens|men|boxer|chino)\b/.test(text)) return "Men";

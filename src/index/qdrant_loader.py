@@ -170,6 +170,7 @@ def load_catalog_to_qdrant(
             "prod_name": str(getattr(row, "prod_name", "")),
             "product_type_name": str(getattr(row, "product_type_name", "unknown")),
             "product_group_name": str(getattr(row, "product_group_name", "unknown")),
+            "index_group_name": str(getattr(row, "index_group_name", "unknown")),
             "department_name": str(getattr(row, "department_name", "unknown")),
             "colour_group_name": str(getattr(row, "colour_group_name", "unknown")),
             "price": float(getattr(row, "avg_price", 0.0)),
