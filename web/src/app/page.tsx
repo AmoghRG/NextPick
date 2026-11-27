@@ -405,6 +405,21 @@ export default function HomePage() {
                 </div>
               ))}
             </div>
+          ) : items.length === 0 ? (
+            <div className="bg-white border border-slate-200 rounded-xl p-8 text-center shadow-sm">
+              <p className="text-sm font-medium text-slate-800">No products match your current filters.</p>
+              <p className="text-xs text-slate-500 mt-1">Try raising the Max price (₹) or switching back to All Categories.</p>
+              <button
+                type="button"
+                onClick={() => {
+                  setProductGroup("");
+                  setMaxPrice("");
+                }}
+                className="mt-4 bg-slate-900 hover:bg-slate-800 text-white text-xs font-medium px-3.5 py-1.5 rounded-lg transition"
+              >
+                Clear Filters
+              </button>
+            </div>
           ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {items.map((item) => {
