@@ -293,6 +293,7 @@ export default function HomePage() {
             <option value="">All Categories</option>
             <option value="Garment Upper body">Upper Body</option>
             <option value="Garment Lower body">Lower Body</option>
+            <option value="Garment Full body">Dresses &amp; Full Body</option>
             <option value="Socks & Tights">Socks &amp; Tights</option>
           </select>
           <input
