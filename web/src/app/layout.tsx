@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "NextPick — 2-Stage Real-Time Recommender",
-  description: "Two-Tower + Qdrant HNSW + Redis + LightGBM Pipeline Inspector",
+  title: "NextPick",
+  description: "Two-Tower + Qdrant HNSW + Redis + LightGBM Real-Time Fashion Recommender",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
