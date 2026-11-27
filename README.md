@@ -11,7 +11,17 @@
 
 Real-time e-commerce retrieval and ranking engine combining a **cold-start-safe PyTorch Two-Tower** (4-head masked self-attention + recency decay), **Qdrant (HNSW)**, **Redis** sliding-window session state, **LightGBM (`lambdarank`)**, **FastAPI**, and a **Next.js Pipeline Inspector**.
 
-[Architecture](docs/architecture.md) · [Evaluation](docs/evaluation.md) · [Dataset & Leakage](docs/data.md) · [Deployment](docs/deployment.md) · [Limitations](docs/limitations.md)
+[Live Demo](https://nextpickme.vercel.app) · [Architecture](docs/architecture.md) · [Evaluation](docs/evaluation.md) · [Dataset & Leakage](docs/data.md) · [Deployment](docs/deployment.md) · [Limitations](docs/limitations.md)
+
+---
+
+## Live Demo & How to Use
+
+Open **[https://nextpickme.vercel.app](https://nextpickme.vercel.app)** (`Vercel` + `Render` + `Qdrant Cloud` + `Upstash Redis`):
+
+1. **Cold-Start Top 10:** Every fresh visit starts with a `0/20` session (`cold_start_trending`) showing trending Women's, Divided, and Men's H&M SKUs with real product thumbnails and estimated `₹` pricing.
+2. **Click to Personalize:** Click any product card to log a `POST /event` click into Upstash Redis (`LPUSH + LTRIM 0 19`). The storefront immediately switches to `two_stage_personalized`, encoding your click trail with `user_tower.onnx`, retrieving Top-100 candidates from Qdrant, and reranking with LightGBM.
+3. **Inspect & Filter:** Watch `S1 → S2` rank deltas, per-stage latencies (`Redis / ONNX / Qdrant / LGBM`), and Stage-1 cosine vs. Stage-2 logit scores in the **Pipeline Inspector**. Use **All Categories**, **Max price (₹)**, or **New Session** to explore or reset.
 
 ---
 

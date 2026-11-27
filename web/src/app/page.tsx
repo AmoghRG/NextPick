@@ -50,10 +50,52 @@ interface RecommendResponse {
 }
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+const IMAGE_CDN_BASE =
+  process.env.NEXT_PUBLIC_IMAGE_CDN ??
+  "https://raw.githubusercontent.com/AmoghRG/nextpick-images/main";
 const INR_SCALE = 50000;
 
 function formatInr(normPrice: number): string {
   return `~₹${Math.round(normPrice * INR_SCALE).toLocaleString("en-IN")}`;
+}
+
+function getImageUrl(articleId: string): string {
+  const padded = articleId.padStart(10, "0");
+  return `${IMAGE_CDN_BASE}/${padded.slice(0, 3)}/${padded}.jpg`;
+}
+
+function ProductThumb({ item }: { item: RecommendedItem }) {
+  const [imgFailed, setImgFailed] = useState(false);
+
+  if (imgFailed) {
+    return (
+      <div
+        className={`w-20 h-28 rounded-lg bg-gradient-to-br ${
+          SWATCH_COLORS[item.colour_group_name ?? ""] ?? "from-slate-600 to-slate-800"
+        } text-white overflow-hidden shrink-0 flex flex-col items-center justify-center border border-slate-200 px-1.5 text-center shadow-inner`}
+      >
+        <span className="text-[10px] font-bold uppercase tracking-wider leading-tight">
+          {(item.product_type_name || item.department_name || "SKU").slice(0, 8)}
+        </span>
+        <span className="text-[9px] opacity-85 mt-1 truncate max-w-full">
+          {item.colour_group_name || "Fashion"}
+        </span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="w-20 h-28 rounded-lg bg-slate-100 overflow-hidden shrink-0 border border-slate-200 shadow-inner">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={getImageUrl(item.article_id)}
+        alt={item.prod_name || item.article_id}
+        loading="lazy"
+        onError={() => setImgFailed(true)}
+        className="w-full h-full object-cover object-center group-hover:scale-105 transition-transform duration-200"
+      />
+    </div>
+  );
 }
 
 function inferSegmentBadge(item: RecommendedItem): string | null {
@@ -141,6 +183,7 @@ export default function HomePage() {
   const [apiOnline, setApiOnline] = useState(true);
   const [eventError, setEventError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [showGuide, setShowGuide] = useState(false);
   const reqSeqRef = useRef(0);
 
   const fetchRecommendations = useCallback(
@@ -223,19 +266,22 @@ export default function HomePage() {
     <main className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
       <header className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 pb-5 mb-5">
         <div>
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2.5 flex-wrap">
             <h1 className="text-2xl font-bold tracking-tight text-slate-900">NextPick</h1>
             <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200">
               2-Stage Real-Time Recommender
             </span>
           </div>
           <p className="text-sm text-slate-600 mt-1">
-            Click any product card to record a live session event in Redis and watch ONNX Two-Tower + Qdrant + LightGBM re-rank in real time.
+            Live fashion storefront powered by{" "}
+            <span className="font-medium text-slate-800">Redis &rarr; ONNX Two-Tower &rarr; Qdrant HNSW &rarr; LightGBM</span>{" "}
+            across 34,469 H&amp;M SKUs.
           </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5">
           <select
+            aria-label="Filter by category"
             value={productGroup}
             onChange={(e) => setProductGroup(e.target.value)}
             className="bg-white border border-slate-300 rounded-lg px-3 py-1.5 text-sm text-slate-800 shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
@@ -255,6 +301,14 @@ export default function HomePage() {
             className="w-32 bg-white border border-slate-300 rounded-lg px-3 py-1.5 text-sm text-slate-800 shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
           />
           <button
+            type="button"
+            onClick={() => setShowGuide((v) => !v)}
+            className="bg-white hover:bg-slate-50 border border-slate-300 rounded-lg px-3 py-1.5 text-sm font-medium text-slate-700 shadow-sm transition"
+          >
+            {showGuide ? "Hide Guide" : "How to Use"}
+          </button>
+          <button
+            type="button"
             onClick={resetSession}
             className="bg-slate-900 hover:bg-slate-800 rounded-lg px-3.5 py-1.5 text-sm font-medium text-white shadow-sm transition"
           >
@@ -263,13 +317,35 @@ export default function HomePage() {
         </div>
       </header>
 
-      <div className="mb-6 rounded-xl bg-white border border-slate-200 px-4 py-2.5 shadow-sm flex flex-wrap items-center justify-between gap-2 text-xs text-slate-600">
-        <span>
-          <strong className="text-slate-900">How to use:</strong> 1. Click any item below to simulate a view &rarr; 2. Watch{" "}
-          <span className="font-mono text-indigo-700">S1 &rarr; S2</span> rank deltas &amp; latency update &rarr; 3. Filter or click{" "}
-          <strong className="text-slate-900">New Session</strong> to reset. <span className="text-slate-400">(Prices are est. ₹ = H&amp;M normalized &times; 50,000.)</span>
-        </span>
-      </div>
+      <section className="mb-6 rounded-xl bg-white border border-slate-200 px-4 py-3 shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-600">
+          <span>
+            <strong className="text-slate-900">Quick Start:</strong> 1. Click any product to simulate a live view &rarr; 2. Watch{" "}
+            <span className="font-mono text-indigo-700">S1 &rarr; S2</span> rank deltas &amp; latencies update &rarr; 3. Filter by category/price or click{" "}
+            <strong className="text-slate-900">New Session</strong> to reset.
+          </span>
+          <span className="text-slate-400">Est. ₹ = H&amp;M normalized &times; 50,000</span>
+        </div>
+
+        {showGuide && (
+          <div className="mt-3 pt-3 border-t border-slate-100 grid grid-cols-1 md:grid-cols-3 gap-3 text-xs text-slate-600">
+            <div className="bg-slate-50 rounded-lg p-3 border border-slate-100">
+              <div className="font-semibold text-slate-900 mb-1">1. Cold-Start vs. Personalized</div>
+              Every fresh visit starts at <span className="font-mono">0/20</span> clicks in{" "}
+              <span className="font-mono text-emerald-700">cold_start_trending</span>. Clicking any item writes to Redis and switches to{" "}
+              <span className="font-mono text-indigo-700">two_stage_personalized</span>.
+            </div>
+            <div className="bg-slate-50 rounded-lg p-3 border border-slate-100">
+              <div className="font-semibold text-slate-900 mb-1">2. Stage-1 vs. Stage-2 Badges</div>
+              <span className="font-mono">S1 #5 &rarr; S2 #2 (+3)</span> shows how LightGBM LambdaRank reranked a Qdrant ANN candidate using 14 real-time features.
+            </div>
+            <div className="bg-slate-50 rounded-lg p-3 border border-slate-100">
+              <div className="font-semibold text-slate-900 mb-1">3. Live Pipeline Inspector</div>
+              The right panel breaks down per-stage latency (<span className="font-mono">Redis / ONNX / Qdrant / LGBM</span>), cosine vs. logit scores, and your 20-item session trail.
+            </div>
+          </div>
+        )}
+      </section>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {eventError && (
@@ -295,18 +371,7 @@ export default function HomePage() {
                 onClick={() => handleProductClick(item)}
                 className="group text-left bg-white hover:bg-indigo-50/30 border border-slate-200 hover:border-indigo-400 rounded-xl p-4 shadow-sm hover:shadow-md transition flex gap-3.5 items-start"
               >
-                <div
-                  className={`w-16 h-20 rounded-lg bg-gradient-to-br ${
-                    SWATCH_COLORS[item.colour_group_name ?? ""] ?? "from-slate-600 to-slate-800"
-                  } text-white overflow-hidden shrink-0 flex flex-col items-center justify-center border border-slate-200 px-1 text-center shadow-inner`}
-                >
-                  <span className="text-[10px] font-bold uppercase tracking-wider leading-tight">
-                    {(item.product_type_name || item.department_name || "SKU").slice(0, 8)}
-                  </span>
-                  <span className="text-[9px] opacity-85 mt-1 truncate max-w-full">
-                    {item.colour_group_name || "Fashion"}
-                  </span>
-                </div>
+                <ProductThumb item={item} />
 
                 <div className="min-w-0 flex-1">
                   <div className="flex items-start justify-between gap-2 mb-1.5 flex-wrap">
