@@ -41,12 +41,16 @@ class AppServices:
         ranker: Stage2Ranker,
         trending_fallback: list[dict],
         is_synthetic_demo: bool = False,
+        article_segments: dict[str, str] | None = None,
+        segment_catalog: dict[str, list[dict]] | None = None,
     ) -> None:
         self.session_store = session_store
         self.retriever = retriever
         self.ranker = ranker
         self.trending_fallback = trending_fallback
         self.is_synthetic_demo = is_synthetic_demo
+        self.article_segments = article_segments or {}
+        self.segment_catalog = segment_catalog or {}
 
 
 def build_default_services() -> AppServices:
@@ -80,11 +84,51 @@ def build_default_services() -> AppServices:
         }
 
     trending: list[dict] = []
+    article_segments: dict[str, str] = {}
+    segment_catalog: dict[str, list[dict]] = {}
     cat_path = art_dir / "catalog.parquet"
     if cat_path.exists():
         full_cat = pd.read_parquet(cat_path).sort_values("train_tx_count", ascending=False)
         # Keep the top-selling colorway per prod_name so cold-start doesn't repeat identical items
         dedup_cat = full_cat.drop_duplicates(subset=["prod_name"], keep="first")
+        if "index_group_name" in full_cat.columns:
+            article_segments = dict(
+                zip(
+                    full_cat["article_id"].astype(str),
+                    full_cat["index_group_name"].astype(str),
+                )
+            )
+            for seg_name in ("Menswear", "Ladieswear", "Divided", "Sport", "Baby/Children"):
+                seg_pool = dedup_cat[dedup_cat["index_group_name"] == seg_name]
+                seg_rows: list = []
+                seg_dept_counts: dict[str, int] = {}
+                seg_overflow: list = []
+                for row in seg_pool.itertuples(index=False):
+                    dept = str(row.department_name)
+                    if seg_dept_counts.get(dept, 0) < 2 and len(seg_rows) < 40:
+                        seg_rows.append(row)
+                        seg_dept_counts[dept] = seg_dept_counts.get(dept, 0) + 1
+                    else:
+                        seg_overflow.append(row)
+                if len(seg_rows) < 40:
+                    seg_rows.extend(seg_overflow[: 40 - len(seg_rows)])
+                segment_catalog[seg_name] = [
+                    {
+                        "article_id": str(r.article_id),
+                        "prod_name": str(r.prod_name),
+                        "product_group_name": str(r.product_group_name),
+                        "index_group_name": str(getattr(r, "index_group_name", "unknown")),
+                        "department_name": str(r.department_name),
+                        "price": float(r.avg_price),
+                        "train_tx_count": int(r.train_tx_count),
+                        "stage1_rank": 101,
+                        "stage2_rank": 101,
+                        "rank_delta": 0,
+                        "stage1_cosine_score": 0.0,
+                        "stage2_logit": 0.0,
+                    }
+                    for r in seg_rows
+                ]
 
         if "index_group_name" in dedup_cat.columns:
             # Build a diverse cold-start mix across Women, Divided, Men, Sport, and product groups
@@ -170,7 +214,123 @@ def build_default_services() -> AppServices:
         ranker=Stage2Ranker(lgbm_path),
         trending_fallback=trending,
         is_synthetic_demo=is_synthetic_demo,
+        article_segments=article_segments,
+        segment_catalog=segment_catalog,
     )
+
+
+def _diversify_personalized(
+    raw_ranked: list[dict],
+    history: list[SessionEvent],
+    svc: AppServices,
+    top_k: int,
+    product_group: str | None = None,
+    max_price: float | None = None,
+) -> list[dict]:
+    """Ensure early-round segment alignment, cross-category variety, and no duplicate colorways."""
+    clicked_ids = {e.article_id for e in history}
+    hist_segs = [
+        svc.article_segments.get(e.article_id, "unknown")
+        for e in history
+        if svc.article_segments.get(e.article_id, "unknown") not in ("", "unknown")
+    ]
+
+    target_segs: set[str] | None = None
+    if hist_segs:
+        unique_segs = set(hist_segs)
+        if unique_segs == {"Menswear"}:
+            target_segs = {"Menswear"}
+        elif unique_segs <= {"Ladieswear", "Divided"}:
+            target_segs = {"Ladieswear", "Divided"}
+        else:
+            target_segs = unique_segs
+
+    early_session = len(history) <= 2
+    max_per_dept = 2 if early_session else 4
+    max_per_group = None if product_group else (3 if early_session else 7)
+
+    # Combine LightGBM-ranked Qdrant candidates with same-segment diverse catalog items (as tail exploration)
+    pool: list[dict] = list(raw_ranked)
+    if early_session and target_segs and svc.segment_catalog:
+        seen_pool_ids = {str(x.get("article_id")) for x in pool}
+        for seg in target_segs:
+            for item in svc.segment_catalog.get(seg, []):
+                aid = str(item.get("article_id"))
+                if aid in seen_pool_ids:
+                    continue
+                if product_group and item.get("product_group_name") != product_group:
+                    continue
+                if max_price is not None and float(item.get("price", 0.0)) > max_price:
+                    continue
+                pool.append(dict(item))
+                seen_pool_ids.add(aid)
+
+    selected: list[dict] = []
+    seen_names: set[str] = set()
+    seen_ids: set[str] = set()
+    dept_counts: dict[str, int] = {}
+    group_counts: dict[str, int] = {}
+
+    def _try_add(item: dict, *, require_segment: bool, enforce_caps: bool, skip_clicked: bool) -> bool:
+        aid = str(item.get("article_id"))
+        if aid in seen_ids:
+            return False
+        if skip_clicked and aid in clicked_ids:
+            return False
+        seg = str(item.get("index_group_name") or svc.article_segments.get(aid, "unknown"))
+        if require_segment and target_segs and seg not in target_segs:
+            return False
+        pname = str(item.get("prod_name") or aid).strip().lower()
+        if pname in seen_names:
+            return False
+        dept = str(item.get("department_name") or "unknown")
+        pg = str(item.get("product_group_name") or "unknown")
+        if enforce_caps:
+            if dept_counts.get(dept, 0) >= max_per_dept:
+                return False
+            if max_per_group is not None and group_counts.get(pg, 0) >= max_per_group:
+                return False
+        selected.append(dict(item))
+        seen_ids.add(aid)
+        seen_names.add(pname)
+        dept_counts[dept] = dept_counts.get(dept, 0) + 1
+        group_counts[pg] = group_counts.get(pg, 0) + 1
+        return True
+
+    # Pass 1: Matching segment + category caps + non-clicked
+    for item in pool:
+        if len(selected) >= top_k:
+            break
+        _try_add(item, require_segment=True, enforce_caps=True, skip_clicked=True)
+
+    # Pass 2: Matching segment without category caps (still deduped & non-clicked)
+    if len(selected) < top_k:
+        for item in pool:
+            if len(selected) >= top_k:
+                break
+            _try_add(item, require_segment=True, enforce_caps=False, skip_clicked=True)
+
+    # Pass 3: Any segment with category caps (still deduped & non-clicked)
+    if len(selected) < top_k:
+        for item in pool:
+            if len(selected) >= top_k:
+                break
+            _try_add(item, require_segment=False, enforce_caps=True, skip_clicked=True)
+
+    # Pass 4: Fill any remaining slots from raw_ranked (including clicked/same-name if small test catalog)
+    if len(selected) < top_k:
+        for item in raw_ranked:
+            if len(selected) >= top_k:
+                break
+            aid = str(item.get("article_id"))
+            if aid not in seen_ids:
+                selected.append(dict(item))
+                seen_ids.add(aid)
+
+    for new_rank, item in enumerate(selected, start=1):
+        item["stage2_rank"] = new_rank
+        item["rank_delta"] = int(item.get("stage1_rank", new_rank)) - new_rank
+    return selected[:top_k]
 
 
 def create_app(services: AppServices | None = None) -> FastAPI:
@@ -305,7 +465,7 @@ def create_app(services: AppServices | None = None) -> FastAPI:
         t2 = time.perf_counter()
         candidates = svc.retriever.search_candidates(
             user_vector=user_vec,
-            top_k=100,
+            top_k=150,
             product_group=product_group,
             max_price=max_price,
         )
@@ -318,23 +478,14 @@ def create_app(services: AppServices | None = None) -> FastAPI:
             sales_channel_id=sales_channel_id,
             top_k=len(candidates),
         )
-        # Deduplicate color variants of the same prod_name so Top-K stays varied
-        ranked: list[dict] = []
-        overflow: list[dict] = []
-        seen_names: set[str] = set()
-        for item in raw_ranked:
-            pname = str(item.get("prod_name") or item.get("article_id")).strip().lower()
-            if pname not in seen_names:
-                seen_names.add(pname)
-                ranked.append(item)
-            else:
-                overflow.append(item)
-        if len(ranked) < top_k:
-            ranked.extend(overflow[: top_k - len(ranked)])
-        ranked = ranked[:top_k]
-        for new_rank, item in enumerate(ranked, start=1):
-            item["stage2_rank"] = new_rank
-            item["rank_delta"] = int(item.get("stage1_rank", new_rank)) - new_rank
+        ranked = _diversify_personalized(
+            raw_ranked=raw_ranked,
+            history=history,
+            svc=svc,
+            top_k=top_k,
+            product_group=product_group,
+            max_price=max_price,
+        )
         lgbm_ms = (time.perf_counter() - t3) * 1000.0
 
         total_ms = (time.perf_counter() - t_start) * 1000.0
