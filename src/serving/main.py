@@ -82,7 +82,14 @@ def build_default_services() -> AppServices:
     trending: list[dict] = []
     cat_path = art_dir / "catalog.parquet"
     if cat_path.exists():
-        cat_df = pd.read_parquet(cat_path).sort_values("train_tx_count", ascending=False).head(20)
+        full_cat = pd.read_parquet(cat_path).sort_values("train_tx_count", ascending=False)
+        if "index_group_name" in full_cat.columns:
+            top_general = full_cat.head(7)
+            top_mens = full_cat[full_cat["index_group_name"] == "Menswear"].head(3)
+            rest = full_cat[~full_cat["article_id"].isin(set(top_general["article_id"]) | set(top_mens["article_id"]))].head(10)
+            cat_df = pd.concat([top_general, top_mens, rest], ignore_index=True)
+        else:
+            cat_df = full_cat.head(20)
         for rank, r in enumerate(cat_df.itertuples(index=False), start=1):
             trending.append(
                 {

@@ -59,7 +59,7 @@ function formatInr(normPrice: number): string {
 function inferSegmentBadge(item: RecommendedItem): string | null {
   const idxGrp = (item.index_group_name ?? "").toLowerCase();
   const text = `${item.department_name} ${item.prod_name ?? ""}`.toLowerCase();
-  const hasWomen = /\b(ladies|women|woman|mama|bra|skirt|dress|blouse|tights)\b/.test(text);
+  const hasWomen = /\b(ladies|women|woman|mama|mom|hw|petite|bra|skirt|dress|blouse|tights)\b/.test(text);
   const hasMen = /\b(mens|men|boxer|chino)\b/.test(text);
 
   if (idxGrp === "ladieswear") return "Women";
