@@ -181,22 +181,25 @@ export default function HomePage() {
   const lat = data?.latency_ms ?? { redis: 0, onnx: 0, qdrant: 0, lightgbm: 0, total: 0 };
 
   return (
-    <main className="max-w-7xl mx-auto px-6 py-8">
-      <header className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-800 pb-5 mb-6">
+    <main className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
+      <header className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 pb-5 mb-5">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-white">
-            NextPick <span className="text-blue-400 text-base font-medium">2-Stage Recommender</span>
-          </h1>
-          <p className="text-sm text-slate-400">
-            Click any product to update the Redis 20-item window and watch Stage-1 → Stage-2 re-ranking live.
+          <div className="flex items-center gap-2.5">
+            <h1 className="text-2xl font-bold tracking-tight text-slate-900">NextPick</h1>
+            <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200">
+              2-Stage Real-Time Recommender
+            </span>
+          </div>
+          <p className="text-sm text-slate-600 mt-1">
+            Click any product card to record a live session event in Redis and watch ONNX Two-Tower + Qdrant + LightGBM re-rank in real time.
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2.5">
           <select
             value={productGroup}
             onChange={(e) => setProductGroup(e.target.value)}
-            className="bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-200"
+            className="bg-white border border-slate-300 rounded-lg px-3 py-1.5 text-sm text-slate-800 shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
           >
             <option value="">All Categories</option>
             <option value="Garment Upper body">Upper Body</option>
@@ -209,30 +212,38 @@ export default function HomePage() {
             placeholder="Max price"
             value={maxPrice}
             onChange={(e) => setMaxPrice(e.target.value)}
-            className="w-28 bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-200"
+            className="w-28 bg-white border border-slate-300 rounded-lg px-3 py-1.5 text-sm text-slate-800 shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
           />
           <button
             onClick={resetSession}
-            className="bg-slate-800 hover:bg-slate-700 border border-slate-600 rounded-lg px-3 py-1.5 text-sm font-medium text-white"
+            className="bg-slate-900 hover:bg-slate-800 rounded-lg px-3.5 py-1.5 text-sm font-medium text-white shadow-sm transition"
           >
             New Session
           </button>
         </div>
       </header>
 
+      <div className="mb-6 rounded-xl bg-white border border-slate-200 px-4 py-2.5 shadow-sm flex flex-wrap items-center justify-between gap-2 text-xs text-slate-600">
+        <span>
+          <strong className="text-slate-900">How to use:</strong> 1. Click any item below to simulate a view &rarr; 2. Watch{" "}
+          <span className="font-mono text-indigo-700">S1 &rarr; S2</span> rank deltas &amp; latency update &rarr; 3. Filter or click{" "}
+          <strong className="text-slate-900">New Session</strong> to reset to cold-start trending.
+        </span>
+      </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {eventError && (
-          <div className="lg:col-span-12 bg-rose-950/70 border border-rose-700/60 text-rose-200 text-xs rounded-lg px-4 py-2 font-mono">
+          <div className="lg:col-span-12 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-lg px-4 py-2 font-mono">
             {eventError}
           </div>
         )}
         {/* Left Panel: Storefront Recommendations */}
         <section className="lg:col-span-7">
           <div className="flex items-center justify-between mb-3">
-            <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-400">
+            <h2 className="text-xs font-bold uppercase tracking-wider text-slate-500">
               Recommended For You ({items.length})
             </h2>
-            {loading && <span className="text-xs text-blue-400">Refreshing...</span>}
+            {loading && <span className="text-xs font-medium text-indigo-600">Updating recommendations...</span>}
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -240,45 +251,47 @@ export default function HomePage() {
               <button
                 key={item.article_id}
                 onClick={() => handleProductClick(item)}
-                className="text-left bg-slate-900/90 hover:bg-slate-800/90 border border-slate-800 hover:border-blue-500/60 rounded-xl p-4 transition flex gap-3.5 items-start"
+                className="group text-left bg-white hover:bg-indigo-50/30 border border-slate-200 hover:border-indigo-400 rounded-xl p-4 shadow-sm hover:shadow-md transition flex gap-3.5 items-start"
               >
                 <div
                   className={`w-16 h-20 rounded-lg bg-gradient-to-br ${
-                    SWATCH_COLORS[item.colour_group_name ?? ""] ?? "from-slate-700 to-slate-900"
-                  } overflow-hidden shrink-0 flex flex-col items-center justify-center border border-slate-700/60 px-1 text-center`}
+                    SWATCH_COLORS[item.colour_group_name ?? ""] ?? "from-slate-600 to-slate-800"
+                  } text-white overflow-hidden shrink-0 flex flex-col items-center justify-center border border-slate-200 px-1 text-center shadow-inner`}
                 >
                   <span className="text-[10px] font-bold uppercase tracking-wider leading-tight">
                     {(item.product_type_name || item.department_name || "SKU").slice(0, 8)}
                   </span>
-                  <span className="text-[9px] opacity-75 mt-1 truncate max-w-full">
+                  <span className="text-[9px] opacity-85 mt-1 truncate max-w-full">
                     {item.colour_group_name || "Fashion"}
                   </span>
                 </div>
 
                 <div className="min-w-0 flex-1">
                   <div className="flex items-start justify-between gap-2 mb-1.5 flex-wrap">
-                    <span className="text-xs font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-300">
+                    <span className="text-xs font-mono font-semibold px-2 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200">
                       #{item.stage2_rank}
                     </span>
                     {item.rank_delta !== 0 && (
                       <span
-                        className={`text-xs font-mono px-2 py-0.5 rounded ${
+                        className={`text-[11px] font-mono font-medium px-2 py-0.5 rounded ${
                           item.rank_delta > 0
-                            ? "bg-emerald-950 text-emerald-300 border border-emerald-700/50"
-                            : "bg-amber-950 text-amber-300 border border-amber-700/50"
+                            ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                            : "bg-amber-50 text-amber-700 border border-amber-200"
                         }`}
                       >
-                        S1 #{item.stage1_rank} → S2 #{item.stage2_rank} ({item.rank_delta > 0 ? `+${item.rank_delta}` : item.rank_delta})
+                        S1 #{item.stage1_rank} &rarr; S2 #{item.stage2_rank} ({item.rank_delta > 0 ? `+${item.rank_delta}` : item.rank_delta})
                       </span>
                     )}
                   </div>
-                  <div className="font-semibold text-white truncate">{item.prod_name || item.article_id}</div>
-                  <div className="text-xs text-slate-400 mt-1 truncate">
-                    {item.department_name} · {item.product_group_name}
+                  <div className="font-semibold text-slate-900 group-hover:text-indigo-700 truncate">
+                    {item.prod_name || item.article_id}
+                  </div>
+                  <div className="text-xs text-slate-500 mt-1 truncate">
+                    {item.department_name} &middot; {item.product_group_name}
                   </div>
                   <div className="mt-2.5 flex items-center justify-between text-xs">
-                    <span className="font-mono text-blue-300">Price: {item.price.toFixed(3)}</span>
-                    <span className="text-slate-500 font-mono">ID {item.article_id}</span>
+                    <span className="font-mono font-semibold text-indigo-700">Price: {item.price.toFixed(3)}</span>
+                    <span className="text-slate-400 font-mono">ID {item.article_id}</span>
                   </div>
                 </div>
               </button>
@@ -288,22 +301,22 @@ export default function HomePage() {
 
         {/* Right Panel: Pipeline Inspector */}
         <aside className="lg:col-span-5 space-y-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
-            <div className="flex items-center justify-between mb-3">
-              <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-300">Pipeline Inspector</h2>
+          <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
+            <div className="flex items-center justify-between mb-3 gap-2 flex-wrap">
+              <h2 className="text-xs font-bold uppercase tracking-wider text-slate-500">Pipeline Inspector</h2>
               <span
-                className={`text-xs px-2 py-0.5 rounded font-mono ${
+                className={`text-xs px-2.5 py-0.5 rounded-full font-mono font-medium ${
                   apiOnline && data?.ranker_mode === "trained_lightgbm"
-                    ? "bg-emerald-950 text-emerald-300"
-                    : "bg-amber-950 text-amber-300 border border-amber-700/50"
+                    ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                    : "bg-amber-50 text-amber-700 border border-amber-200"
                 }`}
               >
-                {data?.mode ?? "connecting"} · {data?.ranker_mode ?? (apiOnline ? "unknown" : "offline_preview")}
+                {data?.mode ?? "connecting"} &middot; {data?.ranker_mode ?? (apiOnline ? "unknown" : "offline_preview")}
               </span>
             </div>
 
             {(!apiOnline || data?.is_synthetic_demo || (data?.ranker_mode && data.ranker_mode !== "trained_lightgbm")) && (
-              <div className="mb-3 rounded-lg bg-amber-950/60 border border-amber-700/50 px-3 py-1.5 text-[11px] font-mono text-amber-200">
+              <div className="mb-3 rounded-lg bg-amber-50 border border-amber-200 px-3 py-1.5 text-[11px] font-mono text-amber-800">
                 {!apiOnline
                   ? "Offline preview mode — showing static seed items (API unreachable)."
                   : data?.is_synthetic_demo
@@ -312,48 +325,48 @@ export default function HomePage() {
               </div>
             )}
 
-            <div className="text-xs text-slate-400 font-mono mb-3">
-              session={sessionId} · redis_window={data?.history_len ?? clickedTrail.length}/20
+            <div className="text-xs text-slate-500 font-mono mb-3">
+              session={sessionId} &middot; redis_window={data?.history_len ?? clickedTrail.length}/20
             </div>
 
-            <div className="grid grid-cols-5 gap-2 text-center bg-slate-950 border border-slate-800 rounded-lg p-2.5">
+            <div className="grid grid-cols-5 gap-2 text-center bg-slate-50 border border-slate-200 rounded-lg p-2.5">
               <div>
                 <div className="text-[11px] text-slate-500">Redis</div>
-                <div className="text-xs font-mono text-slate-200">{lat.redis.toFixed(1)}ms</div>
+                <div className="text-xs font-mono font-semibold text-slate-800">{lat.redis.toFixed(1)}ms</div>
               </div>
               <div>
                 <div className="text-[11px] text-slate-500">ONNX</div>
-                <div className="text-xs font-mono text-slate-200">{lat.onnx.toFixed(1)}ms</div>
+                <div className="text-xs font-mono font-semibold text-slate-800">{lat.onnx.toFixed(1)}ms</div>
               </div>
               <div>
                 <div className="text-[11px] text-slate-500">Qdrant</div>
-                <div className="text-xs font-mono text-slate-200">{lat.qdrant.toFixed(1)}ms</div>
+                <div className="text-xs font-mono font-semibold text-slate-800">{lat.qdrant.toFixed(1)}ms</div>
               </div>
               <div>
                 <div className="text-[11px] text-slate-500">LGBM</div>
-                <div className="text-xs font-mono text-slate-200">{lat.lightgbm.toFixed(1)}ms</div>
+                <div className="text-xs font-mono font-semibold text-slate-800">{lat.lightgbm.toFixed(1)}ms</div>
               </div>
               <div>
-                <div className="text-[11px] text-blue-400">Total</div>
-                <div className="text-xs font-mono font-bold text-blue-300">{lat.total.toFixed(1)}ms</div>
+                <div className="text-[11px] font-semibold text-indigo-600">Total</div>
+                <div className="text-xs font-mono font-bold text-indigo-700">{lat.total.toFixed(1)}ms</div>
               </div>
             </div>
           </div>
 
-          <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">
+          <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">
               Stage-1 Cosine vs Stage-2 Logit
             </h3>
             <div className="space-y-1.5 max-h-56 overflow-y-auto pr-1">
               {items.slice(0, 8).map((item) => (
                 <div
                   key={`insp-${item.article_id}`}
-                  className="flex items-center justify-between text-xs bg-slate-950/70 rounded px-2.5 py-1.5 font-mono"
+                  className="flex items-center justify-between text-xs bg-slate-50 border border-slate-100 rounded px-2.5 py-1.5 font-mono"
                 >
-                  <span className="truncate max-w-[160px] text-slate-200">
+                  <span className="truncate max-w-[160px] text-slate-800 font-medium">
                     #{item.stage2_rank} {item.prod_name || item.article_id}
                   </span>
-                  <span className="text-slate-400">
+                  <span className="text-slate-500">
                     cos={item.stage1_cosine_score.toFixed(3)} | lgb={item.stage2_logit.toFixed(2)}
                   </span>
                 </div>
@@ -361,8 +374,8 @@ export default function HomePage() {
             </div>
           </div>
 
-          <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">
+          <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">
               Live Session Trail ({clickedTrail.length}/20)
             </h3>
             {clickedTrail.length === 0 ? (
@@ -372,7 +385,7 @@ export default function HomePage() {
                 {clickedTrail.map((c, idx) => (
                   <span
                     key={`${c.article_id}-${idx}`}
-                    className="text-xs bg-slate-800 text-slate-300 px-2 py-0.5 rounded font-mono"
+                    className="text-xs bg-indigo-50 text-indigo-700 border border-indigo-200 px-2 py-0.5 rounded font-mono"
                   >
                     {c.prod_name || c.article_id}
                   </span>
