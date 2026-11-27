@@ -49,6 +49,19 @@ interface RecommendResponse {
 }
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+const INR_SCALE = 50000;
+
+function formatInr(normPrice: number): string {
+  return `~₹${Math.round(normPrice * INR_SCALE).toLocaleString("en-IN")}`;
+}
+
+function inferSegmentBadge(item: RecommendedItem): string | null {
+  const text = `${item.department_name} ${item.prod_name ?? ""}`.toLowerCase();
+  if (/\b(ladies|women|woman|mama|bra|skirt|dress|blouse|tights)\b/.test(text)) return "Women";
+  if (/\b(mens|men|boxer|chino)\b/.test(text)) return "Men";
+  if (/\b(baby|kids|boy|boys|girl|girls|junior)\b/.test(text)) return "Kids";
+  return null;
+}
 
 const SEED_CATALOG: RecommendedItem[] = [
   {
@@ -119,7 +132,10 @@ export default function HomePage() {
       try {
         const params = new URLSearchParams({ session_id: sid, top_k: "10" });
         if (grp) params.set("product_group", grp);
-        if (priceCap) params.set("max_price", priceCap);
+        const parsedInr = Number(priceCap);
+        if (priceCap && Number.isFinite(parsedInr) && parsedInr > 0) {
+          params.set("max_price", (parsedInr / INR_SCALE).toFixed(6));
+        }
         const res = await fetch(`${API_BASE}/recommend?${params.toString()}`);
         if (!res.ok) throw new Error(`API error (${res.status})`);
         const json: RecommendResponse = await res.json();
@@ -208,11 +224,12 @@ export default function HomePage() {
           </select>
           <input
             type="number"
-            step="0.01"
-            placeholder="Max price"
+            step="100"
+            min="0"
+            placeholder="Max price (₹)"
             value={maxPrice}
             onChange={(e) => setMaxPrice(e.target.value)}
-            className="w-28 bg-white border border-slate-300 rounded-lg px-3 py-1.5 text-sm text-slate-800 shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            className="w-32 bg-white border border-slate-300 rounded-lg px-3 py-1.5 text-sm text-slate-800 shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
           />
           <button
             onClick={resetSession}
@@ -227,7 +244,7 @@ export default function HomePage() {
         <span>
           <strong className="text-slate-900">How to use:</strong> 1. Click any item below to simulate a view &rarr; 2. Watch{" "}
           <span className="font-mono text-indigo-700">S1 &rarr; S2</span> rank deltas &amp; latency update &rarr; 3. Filter or click{" "}
-          <strong className="text-slate-900">New Session</strong> to reset to cold-start trending.
+          <strong className="text-slate-900">New Session</strong> to reset. <span className="text-slate-400">(Prices are est. ₹ = H&amp;M normalized &times; 50,000.)</span>
         </span>
       </div>
 
@@ -247,7 +264,9 @@ export default function HomePage() {
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {items.map((item) => (
+            {items.map((item) => {
+              const segment = inferSegmentBadge(item);
+              return (
               <button
                 key={item.article_id}
                 onClick={() => handleProductClick(item)}
@@ -268,9 +287,16 @@ export default function HomePage() {
 
                 <div className="min-w-0 flex-1">
                   <div className="flex items-start justify-between gap-2 mb-1.5 flex-wrap">
-                    <span className="text-xs font-mono font-semibold px-2 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200">
-                      #{item.stage2_rank}
-                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-xs font-mono font-semibold px-2 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200">
+                        #{item.stage2_rank}
+                      </span>
+                      {segment && (
+                        <span className="text-[11px] font-medium px-2 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200">
+                          {segment}
+                        </span>
+                      )}
+                    </div>
                     {item.rank_delta !== 0 && (
                       <span
                         className={`text-[11px] font-mono font-medium px-2 py-0.5 rounded ${
@@ -289,13 +315,17 @@ export default function HomePage() {
                   <div className="text-xs text-slate-500 mt-1 truncate">
                     {item.department_name} &middot; {item.product_group_name}
                   </div>
-                  <div className="mt-2.5 flex items-center justify-between text-xs">
-                    <span className="font-mono font-semibold text-indigo-700">Price: {item.price.toFixed(3)}</span>
-                    <span className="text-slate-400 font-mono">ID {item.article_id}</span>
+                  <div className="mt-2.5 flex items-center justify-between text-xs gap-2">
+                    <span className="font-mono font-semibold text-indigo-700">
+                      {formatInr(item.price)}{" "}
+                      <span className="text-[10px] font-normal text-slate-400">({item.price.toFixed(3)})</span>
+                    </span>
+                    <span className="text-slate-400 font-mono truncate">ID {item.article_id}</span>
                   </div>
                 </div>
               </button>
-            ))}
+              );
+            })}
           </div>
         </section>
 
