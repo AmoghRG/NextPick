@@ -125,9 +125,10 @@ function inferSegmentBadge(item: RecommendedItem): string | null {
 
 const SEED_CATALOG: RecommendedItem[] = [
   {
-    article_id: "0706016001",
-    prod_name: "Jade HW Skinny Denim",
+    article_id: "0751471001",
+    prod_name: "Pluto RW slacks (1)",
     product_group_name: "Garment Lower body",
+    index_group_name: "Ladieswear",
     department_name: "Trouser",
     price: 0.033,
     stage1_rank: 1,
@@ -137,11 +138,12 @@ const SEED_CATALOG: RecommendedItem[] = [
     stage2_logit: 0.0,
   },
   {
-    article_id: "0372860001",
-    prod_name: "7p Basic Low Socks",
-    product_group_name: "Socks & Tights",
-    department_name: "Socks",
-    price: 0.013,
+    article_id: "0706016001",
+    prod_name: "Jade HW Skinny Denim TRS",
+    product_group_name: "Garment Lower body",
+    index_group_name: "Divided",
+    department_name: "Trousers",
+    price: 0.033,
     stage1_rank: 2,
     stage2_rank: 2,
     rank_delta: 0,
@@ -149,11 +151,12 @@ const SEED_CATALOG: RecommendedItem[] = [
     stage2_logit: 0.0,
   },
   {
-    article_id: "0610776002",
-    prod_name: "Tilly Oversized Tee",
+    article_id: "0685814001",
+    prod_name: "RICHIE HOOD",
     product_group_name: "Garment Upper body",
-    department_name: "Jersey Basic",
-    price: 0.016,
+    index_group_name: "Menswear",
+    department_name: "Heavy Basic Jersey",
+    price: 0.033,
     stage1_rank: 3,
     stage2_rank: 3,
     rank_delta: 0,
@@ -161,11 +164,12 @@ const SEED_CATALOG: RecommendedItem[] = [
     stage2_logit: 0.0,
   },
   {
-    article_id: "0759871002",
-    prod_name: "Tilda Hooded Sweatshirt",
+    article_id: "0916468003",
+    prod_name: "Bailey",
     product_group_name: "Garment Upper body",
-    department_name: "Jersey",
-    price: 0.042,
+    index_group_name: "Ladieswear",
+    department_name: "Knitwear",
+    price: 0.033,
     stage1_rank: 4,
     stage2_rank: 4,
     rank_delta: 0,
@@ -183,7 +187,7 @@ export default function HomePage() {
   const [apiOnline, setApiOnline] = useState(true);
   const [eventError, setEventError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [showGuide, setShowGuide] = useState(false);
+  const [showGuide, setShowGuide] = useState(true);
   const reqSeqRef = useRef(0);
 
   const fetchRecommendations = useCallback(
@@ -305,7 +309,7 @@ export default function HomePage() {
             onClick={() => setShowGuide((v) => !v)}
             className="bg-white hover:bg-slate-50 border border-slate-300 rounded-lg px-3 py-1.5 text-sm font-medium text-slate-700 shadow-sm transition"
           >
-            {showGuide ? "Hide Guide" : "How to Use"}
+            {showGuide ? "Hide Overview" : "How it Works"}
           </button>
           <button
             type="button"
@@ -317,35 +321,46 @@ export default function HomePage() {
         </div>
       </header>
 
-      <section className="mb-6 rounded-xl bg-white border border-slate-200 px-4 py-3 shadow-sm">
-        <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-600">
-          <span>
-            <strong className="text-slate-900">Quick Start:</strong> 1. Click any product to simulate a live view &rarr; 2. Watch{" "}
-            <span className="font-mono text-indigo-700">S1 &rarr; S2</span> rank deltas &amp; latencies update &rarr; 3. Filter by category/price or click{" "}
-            <strong className="text-slate-900">New Session</strong> to reset.
-          </span>
-          <span className="text-slate-400">Est. ₹ = H&amp;M normalized &times; 50,000</span>
-        </div>
-
-        {showGuide && (
-          <div className="mt-3 pt-3 border-t border-slate-100 grid grid-cols-1 md:grid-cols-3 gap-3 text-xs text-slate-600">
-            <div className="bg-slate-50 rounded-lg p-3 border border-slate-100">
-              <div className="font-semibold text-slate-900 mb-1">1. Cold-Start vs. Personalized</div>
-              Every fresh visit starts at <span className="font-mono">0/20</span> clicks in{" "}
-              <span className="font-mono text-emerald-700">cold_start_trending</span>. Clicking any item writes to Redis and switches to{" "}
-              <span className="font-mono text-indigo-700">two_stage_personalized</span>.
+      {showGuide && (
+        <section className="mb-6 rounded-2xl bg-gradient-to-br from-white to-slate-50 border border-slate-200 p-5 shadow-sm">
+          <div className="flex flex-wrap items-start justify-between gap-4 mb-4">
+            <div className="max-w-2xl">
+              <div className="text-[11px] font-bold uppercase tracking-wider text-indigo-600 mb-1">
+                Real-Time Fashion Retrieval &amp; Ranking Demo
+              </div>
+              <h2 className="text-lg font-semibold text-slate-900">
+                Watch AI re-rank 34,469 H&amp;M products in milliseconds as you browse.
+              </h2>
+              <p className="text-xs text-slate-600 mt-1">
+                Click any product card below to simulate a shopper view. Even <strong className="text-slate-800">1 click</strong> activates
+                two-stage personalization — pick <strong className="text-slate-800">1–3 items</strong> (up to 20 remembered in Redis) to see
+                how recommendations adapt to your style.
+              </p>
             </div>
-            <div className="bg-slate-50 rounded-lg p-3 border border-slate-100">
-              <div className="font-semibold text-slate-900 mb-1">2. Stage-1 vs. Stage-2 Badges</div>
-              <span className="font-mono">S1 #5 &rarr; S2 #2 (+3)</span> shows how LightGBM LambdaRank reranked a Qdrant ANN candidate using 14 real-time features.
-            </div>
-            <div className="bg-slate-50 rounded-lg p-3 border border-slate-100">
-              <div className="font-semibold text-slate-900 mb-1">3. Live Pipeline Inspector</div>
-              The right panel breaks down per-stage latency (<span className="font-mono">Redis / ONNX / Qdrant / LGBM</span>), cosine vs. logit scores, and your 20-item session trail.
+            <div className="flex items-center gap-2 text-[11px] font-mono text-slate-600 bg-white border border-slate-200 rounded-lg px-3 py-2">
+              <span className="font-semibold text-slate-900">Est. ₹</span>
+              <span>= H&amp;M normalized &times; 50,000</span>
             </div>
           </div>
-        )}
-      </section>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs text-slate-600">
+            <div className="bg-white rounded-xl p-3.5 border border-slate-200/80">
+              <div className="font-semibold text-slate-900 mb-1">1. Pick 1–3 Clothes Below</div>
+              Starts in <span className="font-mono text-emerald-700">cold_start_trending</span> (<span className="font-mono">0/20</span>).
+              Clicking 1 item writes to Upstash Redis and triggers <span className="font-mono text-indigo-700">two_stage_personalized</span>.
+            </div>
+            <div className="bg-white rounded-xl p-3.5 border border-slate-200/80">
+              <div className="font-semibold text-slate-900 mb-1">2. Stage-1 &rarr; Stage-2 Re-ranking</div>
+              ONNX Two-Tower + Qdrant HNSW retrieves Top-100 candidates, then LightGBM LambdaRank re-ranks them (<span className="font-mono">S1 &rarr; S2</span>).
+            </div>
+            <div className="bg-white rounded-xl p-3.5 border border-slate-200/80">
+              <div className="font-semibold text-slate-900 mb-1">3. Filter, Inspect &amp; Reset</div>
+              Filter by category or ₹ budget anytime, inspect live latencies on the right, or click{" "}
+              <strong className="text-slate-900">New Session</strong> to reset to <span className="font-mono">0/20</span>.
+            </div>
+          </div>
+        </section>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {eventError && (
@@ -355,21 +370,53 @@ export default function HomePage() {
         )}
         {/* Left Panel: Storefront Recommendations */}
         <section className="lg:col-span-7">
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-xs font-bold uppercase tracking-wider text-slate-500">
-              Recommended For You ({items.length})
-            </h2>
-            {loading && <span className="text-xs font-medium text-indigo-600">Updating recommendations...</span>}
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+            <div className="flex items-center gap-2.5">
+              <h2 className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                Recommended For You ({data ? items.length : "..."})
+              </h2>
+              <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200">
+                {(data?.history_len ?? clickedTrail.length) === 0
+                  ? "0/20 clicks · Pick 1–3 items to personalize"
+                  : `${data?.history_len ?? clickedTrail.length}/20 clicks · Personalized active`}
+              </span>
+            </div>
+            {loading && (
+              <span className="text-xs font-medium text-indigo-600">
+                {data ? "Updating recommendations..." : "Connecting to ML API..."}
+              </span>
+            )}
           </div>
 
+          {!data && loading ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {Array.from({ length: 6 }).map((_, idx) => (
+                <div
+                  key={`skel-${idx}`}
+                  className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm flex gap-3.5 items-start animate-pulse"
+                >
+                  <div className="w-20 h-28 rounded-lg bg-slate-200 shrink-0" />
+                  <div className="flex-1 space-y-2.5 py-1">
+                    <div className="h-4 bg-slate-200 rounded w-20" />
+                    <div className="h-4 bg-slate-200 rounded w-3/4" />
+                    <div className="h-3 bg-slate-100 rounded w-1/2" />
+                    <div className="h-4 bg-slate-100 rounded w-1/3 mt-3" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {items.map((item) => {
               const segment = inferSegmentBadge(item);
+              const isClicked = clickedTrail.some((c) => c.article_id === item.article_id);
               return (
               <button
                 key={item.article_id}
                 onClick={() => handleProductClick(item)}
-                className="group text-left bg-white hover:bg-indigo-50/30 border border-slate-200 hover:border-indigo-400 rounded-xl p-4 shadow-sm hover:shadow-md transition flex gap-3.5 items-start"
+                className={`group text-left bg-white hover:bg-indigo-50/30 border rounded-xl p-4 shadow-sm hover:shadow-md transition flex gap-3.5 items-start ${
+                  isClicked ? "border-indigo-300 ring-1 ring-indigo-100" : "border-slate-200 hover:border-indigo-400"
+                }`}
               >
                 <ProductThumb item={item} />
 
@@ -382,6 +429,11 @@ export default function HomePage() {
                       {segment && (
                         <span className="text-[11px] font-medium px-2 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200">
                           {segment}
+                        </span>
+                      )}
+                      {isClicked && (
+                        <span className="text-[11px] font-semibold px-2 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-200">
+                          Clicked ✓
                         </span>
                       )}
                     </div>
@@ -415,6 +467,7 @@ export default function HomePage() {
               );
             })}
           </div>
+          )}
         </section>
 
         {/* Right Panel: Pipeline Inspector */}
