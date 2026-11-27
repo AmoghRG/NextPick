@@ -83,14 +83,56 @@ def build_default_services() -> AppServices:
     cat_path = art_dir / "catalog.parquet"
     if cat_path.exists():
         full_cat = pd.read_parquet(cat_path).sort_values("train_tx_count", ascending=False)
-        if "index_group_name" in full_cat.columns:
-            top_general = full_cat.head(7)
-            top_mens = full_cat[full_cat["index_group_name"] == "Menswear"].head(3)
-            rest = full_cat[~full_cat["article_id"].isin(set(top_general["article_id"]) | set(top_mens["article_id"]))].head(10)
-            cat_df = pd.concat([top_general, top_mens, rest], ignore_index=True)
+        # Keep the top-selling colorway per prod_name so cold-start doesn't repeat identical items
+        dedup_cat = full_cat.drop_duplicates(subset=["prod_name"], keep="first")
+
+        if "index_group_name" in dedup_cat.columns:
+            # Build a diverse cold-start mix across Women, Divided, Men, Sport, and product groups
+            selected_rows = []
+            seen_ids: set[str] = set()
+            seen_types: dict[str, int] = {}
+
+            def _pick_diverse(pool: pd.DataFrame, limit: int, max_per_group: int = 2) -> None:
+                for row in pool.itertuples(index=False):
+                    if len(selected_rows) >= limit:
+                        break
+                    aid = str(row.article_id)
+                    if aid in seen_ids:
+                        continue
+                    pg = str(row.product_group_name)
+                    if seen_types.get(pg, 0) >= max_per_group:
+                        continue
+                    selected_rows.append(row)
+                    seen_ids.add(aid)
+                    seen_types[pg] = seen_types.get(pg, 0) + 1
+
+            # Interleave 1 item at a time across key segments for Top-10 variety
+            women_pool = dedup_cat[dedup_cat["index_group_name"] == "Ladieswear"]
+            divided_pool = dedup_cat[dedup_cat["index_group_name"] == "Divided"]
+            men_pool = dedup_cat[dedup_cat["index_group_name"] == "Menswear"]
+            sport_pool = dedup_cat[dedup_cat["index_group_name"] == "Sport"]
+
+            # Target balanced Top-10: Women (4), Divided (2), Men (3), Sport (1) across diverse categories
+            _pick_diverse(women_pool, 2, max_per_group=1)
+            _pick_diverse(divided_pool, 4, max_per_group=1)
+            _pick_diverse(men_pool, 6, max_per_group=1)
+            _pick_diverse(sport_pool, 7, max_per_group=1)
+            _pick_diverse(women_pool, 9, max_per_group=2)
+            _pick_diverse(men_pool, 10, max_per_group=2)
+
+            # Fill up to 60 diverse items so category/price filters always have plenty of results
+            for row in dedup_cat.itertuples(index=False):
+                if len(selected_rows) >= 60:
+                    break
+                aid = str(row.article_id)
+                if aid not in seen_ids:
+                    selected_rows.append(row)
+                    seen_ids.add(aid)
+            cat_rows = selected_rows
         else:
-            cat_df = full_cat.head(20)
-        for rank, r in enumerate(cat_df.itertuples(index=False), start=1):
+            cat_rows = list(dedup_cat.head(60).itertuples(index=False))
+
+        for rank, r in enumerate(cat_rows, start=1):
             trending.append(
                 {
                     "article_id": str(r.article_id),
@@ -260,7 +302,29 @@ def create_app(services: AppServices | None = None) -> FastAPI:
         qdrant_ms = (time.perf_counter() - t2) * 1000.0
 
         t3 = time.perf_counter()
-        ranked = svc.ranker.rank(history, candidates, sales_channel_id=sales_channel_id, top_k=top_k)
+        raw_ranked = svc.ranker.rank(
+            history,
+            candidates,
+            sales_channel_id=sales_channel_id,
+            top_k=min(len(candidates), top_k * 4),
+        )
+        # Deduplicate color variants of the same prod_name so Top-K stays varied
+        ranked: list[dict] = []
+        overflow: list[dict] = []
+        seen_names: set[str] = set()
+        for item in raw_ranked:
+            pname = str(item.get("prod_name") or item.get("article_id")).strip().lower()
+            if pname not in seen_names:
+                seen_names.add(pname)
+                ranked.append(item)
+            else:
+                overflow.append(item)
+        if len(ranked) < top_k:
+            ranked.extend(overflow[: top_k - len(ranked)])
+        ranked = ranked[:top_k]
+        for new_rank, item in enumerate(ranked, start=1):
+            item["stage2_rank"] = new_rank
+            item["rank_delta"] = int(item.get("stage1_rank", new_rank)) - new_rank
         lgbm_ms = (time.perf_counter() - t3) * 1000.0
 
         total_ms = (time.perf_counter() - t_start) * 1000.0
