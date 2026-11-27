@@ -457,18 +457,20 @@ def test_early_session_diversity_and_segment_alignment() -> None:
 
     raw_ranked = [
         {"article_id": "M_SH1", "prod_name": "Dario Shorts", "product_group_name": "Garment Lower body", "index_group_name": "Menswear", "department_name": "Shorts", "price": 0.02, "stage1_rank": 1},
-        {"article_id": "M_SH2", "prod_name": "Laurent Shorts", "product_group_name": "Garment Lower body", "index_group_name": "Menswear", "department_name": "Shorts", "price": 0.02, "stage1_rank": 2},
-        {"article_id": "M_SH2_ALT", "prod_name": "Laurent Shorts", "product_group_name": "Garment Lower body", "index_group_name": "Menswear", "department_name": "Shorts", "price": 0.02, "stage1_rank": 3},
-        {"article_id": "M_SH3", "prod_name": "Zen Shorts", "product_group_name": "Garment Lower body", "index_group_name": "Menswear", "department_name": "Shorts", "price": 0.02, "stage1_rank": 4},
-        {"article_id": "M_SH4", "prod_name": "Extra Shorts", "product_group_name": "Garment Lower body", "index_group_name": "Menswear", "department_name": "Shorts", "price": 0.02, "stage1_rank": 5},
-        {"article_id": "W_DR1", "prod_name": "Ladies Dress", "product_group_name": "Garment Full body", "index_group_name": "Ladieswear", "department_name": "Dress", "price": 0.03, "stage1_rank": 6},
+        {"article_id": "M_SH1_COLOR2", "prod_name": "Dario Shorts", "product_group_name": "Garment Lower body", "index_group_name": "Menswear", "department_name": "Shorts", "price": 0.02, "stage1_rank": 2},
+        {"article_id": "M_SH2", "prod_name": "Laurent Shorts", "product_group_name": "Garment Lower body", "index_group_name": "Menswear", "department_name": "Shorts", "price": 0.02, "stage1_rank": 3},
+        {"article_id": "M_SH2_ALT", "prod_name": "Laurent Shorts", "product_group_name": "Garment Lower body", "index_group_name": "Menswear", "department_name": "Shorts", "price": 0.02, "stage1_rank": 4},
+        {"article_id": "M_SH3", "prod_name": "Zen Shorts", "product_group_name": "Garment Lower body", "index_group_name": "Menswear", "department_name": "Shorts", "price": 0.02, "stage1_rank": 5},
+        {"article_id": "M_SH4", "prod_name": "Extra Shorts", "product_group_name": "Garment Lower body", "index_group_name": "Menswear", "department_name": "Shorts", "price": 0.02, "stage1_rank": 6},
+        {"article_id": "W_DR1", "prod_name": "Ladies Dress", "product_group_name": "Garment Full body", "index_group_name": "Ladieswear", "department_name": "Dress", "price": 0.03, "stage1_rank": 7},
     ]
     history = [SessionEvent(article_id="M_SH1", price=0.02, department_name="Shorts", product_group_name="Garment Lower body")]
 
     out = _diversify_personalized(raw_ranked, history, services, top_k=4)
     out_ids = [x["article_id"] for x in out]
-    # Clicked item excluded, duplicate colorway excluded, >2 Shorts capped, Menswear Hoodie & Chino blended in, Ladieswear excluded
+    # Clicked item AND its alternate colorway excluded, duplicate colorway excluded, >2 Shorts capped, Menswear Hoodie & Chino blended in, Ladieswear excluded
     assert "M_SH1" not in out_ids
+    assert "M_SH1_COLOR2" not in out_ids
     assert "M_SH2_ALT" not in out_ids
     assert "M_SH4" not in out_ids
     assert "W_DR1" not in out_ids

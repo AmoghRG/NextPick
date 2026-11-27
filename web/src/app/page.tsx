@@ -59,6 +59,13 @@ function formatInr(normPrice: number): string {
   return `~₹${Math.round(normPrice * INR_SCALE).toLocaleString("en-IN")}`;
 }
 
+function sessionStageLabel(clicks: number): string {
+  if (clicks <= 0) return "Cold-Start · Pick 1–3 items";
+  if (clicks === 1) return "1 click · Exploring your style";
+  if (clicks === 2) return "2 clicks · Refining fit & budget";
+  return `${clicks} clicks · Dialed in`;
+}
+
 function getImageUrl(articleId: string): string {
   const padded = articleId.padStart(10, "0");
   return `${IMAGE_CDN_BASE}/${padded.slice(0, 3)}/${padded}.jpg`;
@@ -296,6 +303,26 @@ export default function HomePage() {
             <option value="Garment Full body">Dresses &amp; Full Body</option>
             <option value="Socks & Tights">Socks &amp; Tights</option>
           </select>
+          <div className="flex items-center gap-1 bg-white border border-slate-300 rounded-lg p-0.5 shadow-sm">
+            {[
+              { label: "Any ₹", value: "" },
+              { label: "≤ ₹1,000", value: "1000" },
+              { label: "≤ ₹2,000", value: "2000" },
+            ].map((preset) => (
+              <button
+                key={preset.label}
+                type="button"
+                onClick={() => setMaxPrice(preset.value)}
+                className={`px-2 py-1 text-xs font-medium rounded-md transition ${
+                  maxPrice === preset.value
+                    ? "bg-slate-900 text-white"
+                    : "text-slate-600 hover:bg-slate-100"
+                }`}
+              >
+                {preset.label}
+              </button>
+            ))}
+          </div>
           <input
             type="number"
             step="100"
@@ -303,7 +330,7 @@ export default function HomePage() {
             placeholder="Max price (₹)"
             value={maxPrice}
             onChange={(e) => setMaxPrice(e.target.value)}
-            className="w-32 bg-white border border-slate-300 rounded-lg px-3 py-1.5 text-sm text-slate-800 shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            className="w-28 bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-sm text-slate-800 shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
           />
           <button
             type="button"
@@ -347,17 +374,17 @@ export default function HomePage() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs text-slate-600">
             <div className="bg-white rounded-xl p-3.5 border border-slate-200/80">
               <div className="font-semibold text-slate-900 mb-1">1. Pick 1–3 Clothes Below</div>
-              Starts in <span className="font-mono text-emerald-700">cold_start_trending</span> (<span className="font-mono">0/20</span>).
-              Clicking 1 item writes to Upstash Redis and triggers <span className="font-mono text-indigo-700">two_stage_personalized</span>.
+              Starts in <span className="font-mono text-emerald-700">cold_start_trending</span>.
+              Even 1 click triggers <span className="font-mono text-indigo-700">two_stage_personalized</span>, and 2–3 clicks dial in your style.
             </div>
             <div className="bg-white rounded-xl p-3.5 border border-slate-200/80">
               <div className="font-semibold text-slate-900 mb-1">2. Stage-1 &rarr; Stage-2 Re-ranking</div>
-              ONNX Two-Tower + Qdrant HNSW retrieves Top-100 candidates, then LightGBM LambdaRank re-ranks them (<span className="font-mono">S1 &rarr; S2</span>).
+              ONNX Two-Tower + Qdrant HNSW retrieves Top-150 candidates, then LightGBM LambdaRank re-ranks them (<span className="font-mono">S1 &rarr; S2</span>).
             </div>
             <div className="bg-white rounded-xl p-3.5 border border-slate-200/80">
               <div className="font-semibold text-slate-900 mb-1">3. Filter, Inspect &amp; Reset</div>
-              Filter by category or ₹ budget anytime, inspect live latencies on the right, or click{" "}
-              <strong className="text-slate-900">New Session</strong> to reset to <span className="font-mono">0/20</span>.
+              Use the category or ₹ budget presets anytime, inspect live latencies on the right, or click{" "}
+              <strong className="text-slate-900">New Session</strong> to reset.
             </div>
           </div>
         </section>
@@ -376,10 +403,8 @@ export default function HomePage() {
               <h2 className="text-xs font-bold uppercase tracking-wider text-slate-500">
                 Recommended For You ({data ? items.length : "..."})
               </h2>
-              <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200">
-                {(data?.history_len ?? clickedTrail.length) === 0
-                  ? "0/20 clicks · Pick 1–3 items to personalize"
-                  : `${data?.history_len ?? clickedTrail.length}/20 clicks · Personalized active`}
+              <span className="text-[11px] font-medium px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200">
+                {sessionStageLabel(data?.history_len ?? clickedTrail.length)}
               </span>
             </div>
             {loading && (
@@ -513,7 +538,7 @@ export default function HomePage() {
             )}
 
             <div className="text-xs text-slate-500 font-mono mb-3">
-              session={sessionId} &middot; redis_window={data?.history_len ?? clickedTrail.length}/20
+              session={sessionId} &middot; redis_window={data?.history_len ?? clickedTrail.length} (max 20)
             </div>
 
             <div className="grid grid-cols-5 gap-2 text-center bg-slate-50 border border-slate-200 rounded-lg p-2.5">
@@ -563,7 +588,7 @@ export default function HomePage() {
 
           <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
             <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">
-              Live Session Trail ({clickedTrail.length}/20)
+              Live Session Trail ({clickedTrail.length} &middot; max 20)
             </h3>
             {clickedTrail.length === 0 ? (
               <p className="text-xs text-slate-500">Click any product card on the left to start a live session.</p>
