@@ -120,6 +120,16 @@ def build_default_services() -> AppServices:
             _pick_diverse(women_pool, 9, max_per_group=2)
             _pick_diverse(men_pool, 10, max_per_group=2)
 
+            # Ensure Socks & Tights also has at least 5 items in trending_fallback for filter usability
+            socks_pool = dedup_cat[dedup_cat["product_group_name"] == "Socks & Tights"]
+            for row in socks_pool.itertuples(index=False):
+                if sum(1 for r in selected_rows if str(r.product_group_name) == "Socks & Tights") >= 5:
+                    break
+                aid = str(row.article_id)
+                if aid not in seen_ids:
+                    selected_rows.append(row)
+                    seen_ids.add(aid)
+
             # Fill up to 60 diverse items so category/price filters always have plenty of results
             for row in dedup_cat.itertuples(index=False):
                 if len(selected_rows) >= 60:
@@ -306,7 +316,7 @@ def create_app(services: AppServices | None = None) -> FastAPI:
             history,
             candidates,
             sales_channel_id=sales_channel_id,
-            top_k=min(len(candidates), top_k * 4),
+            top_k=len(candidates),
         )
         # Deduplicate color variants of the same prod_name so Top-K stays varied
         ranked: list[dict] = []
