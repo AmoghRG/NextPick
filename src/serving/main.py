@@ -89,6 +89,7 @@ def build_default_services() -> AppServices:
                     "article_id": str(r.article_id),
                     "prod_name": str(r.prod_name),
                     "product_group_name": str(r.product_group_name),
+                    "index_group_name": str(getattr(r, "index_group_name", "unknown")),
                     "department_name": str(r.department_name),
                     "price": float(r.avg_price),
                     "train_tx_count": int(r.train_tx_count),
