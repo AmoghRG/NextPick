@@ -133,7 +133,7 @@ const SEED_CATALOG: RecommendedItem[] = [
 ];
 
 export default function HomePage() {
-  const [sessionId, setSessionId] = useState("demo_user_1");
+  const [sessionId, setSessionId] = useState("");
   const [productGroup, setProductGroup] = useState("");
   const [maxPrice, setMaxPrice] = useState("");
   const [data, setData] = useState<RecommendResponse | null>(null);
@@ -178,6 +178,11 @@ export default function HomePage() {
   );
 
   useEffect(() => {
+    setSessionId(`demo_${Math.random().toString(36).slice(2, 8)}`);
+  }, []);
+
+  useEffect(() => {
+    if (!sessionId) return;
     fetchRecommendations(sessionId, productGroup, maxPrice);
   }, [sessionId, productGroup, maxPrice, fetchRecommendations]);
 
