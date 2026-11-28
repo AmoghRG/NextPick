@@ -44,6 +44,8 @@ interface RecommendResponse {
   mode: string;
   ranker_mode?: string;
   is_synthetic_demo?: boolean;
+  catalog_size?: number;
+  target_clicks?: number;
   history_len: number;
   items: RecommendedItem[];
   latency_ms: LatencyBreakdown;
@@ -59,11 +61,11 @@ function formatInr(normPrice: number): string {
   return `~₹${Math.round(normPrice * INR_SCALE).toLocaleString("en-IN")}`;
 }
 
-function sessionStageLabel(clicks: number): string {
-  if (clicks <= 0) return "Cold-Start · Pick 1–3 items";
-  if (clicks === 1) return "1 click · Exploring your style";
-  if (clicks === 2) return "2 clicks · Refining fit & budget";
-  return `${clicks} clicks · Dialed in`;
+function sessionStageLabel(clicks: number, targetClicks: number): string {
+  if (clicks <= 0) return `Cold-Start · Pick ${targetClicks} items`;
+  if (clicks < Math.max(2, targetClicks - 1)) return `${clicks}/${targetClicks} clicks · Exploring your style`;
+  if (clicks < targetClicks) return `${clicks}/${targetClicks} clicks · Refining fit & budget`;
+  return `${clicks} clicks · Dialed in (${targetClicks}+ target)`;
 }
 
 function getImageUrl(articleId: string): string {
@@ -272,6 +274,8 @@ export default function HomePage() {
 
   const items = data?.items ?? SEED_CATALOG;
   const lat = data?.latency_ms ?? { redis: 0, onnx: 0, qdrant: 0, lightgbm: 0, total: 0 };
+  const targetClicks = data?.target_clicks ?? 4;
+  const catalogSize = data?.catalog_size ?? 34469;
 
   return (
     <main className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
@@ -361,8 +365,8 @@ export default function HomePage() {
               </h2>
               <p className="text-xs text-slate-600 mt-1">
                 Click any product card below to simulate a shopper view. Even <strong className="text-slate-800">1 click</strong> activates
-                two-stage personalization — pick <strong className="text-slate-800">1–3 items</strong> (up to 20 remembered in Redis) to see
-                how recommendations adapt to your style.
+                two-stage personalization — pick <strong className="text-slate-800">{targetClicks} items</strong> (scaled dynamically to{" "}
+                {catalogSize.toLocaleString("en-IN")} SKUs) to dial in your style.
               </p>
             </div>
             <div className="flex items-center gap-2 text-[11px] font-mono text-slate-600 bg-white border border-slate-200 rounded-lg px-3 py-2">
@@ -373,9 +377,9 @@ export default function HomePage() {
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs text-slate-600">
             <div className="bg-white rounded-xl p-3.5 border border-slate-200/80">
-              <div className="font-semibold text-slate-900 mb-1">1. Pick 1–3 Clothes Below</div>
+              <div className="font-semibold text-slate-900 mb-1">1. Pick {targetClicks} Clothes Below</div>
               Starts in <span className="font-mono text-emerald-700">cold_start_trending</span>.
-              Even 1 click triggers <span className="font-mono text-indigo-700">two_stage_personalized</span>, and 2–3 clicks dial in your style.
+              Even 1 click triggers <span className="font-mono text-indigo-700">two_stage_personalized</span>, and {targetClicks} clicks dial in your style.
             </div>
             <div className="bg-white rounded-xl p-3.5 border border-slate-200/80">
               <div className="font-semibold text-slate-900 mb-1">2. Stage-1 &rarr; Stage-2 Re-ranking</div>
@@ -404,7 +408,7 @@ export default function HomePage() {
                 Recommended For You ({data ? items.length : "..."})
               </h2>
               <span className="text-[11px] font-medium px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200">
-                {sessionStageLabel(data?.history_len ?? clickedTrail.length)}
+                {sessionStageLabel(data?.history_len ?? clickedTrail.length, targetClicks)}
               </span>
             </div>
             {loading && (

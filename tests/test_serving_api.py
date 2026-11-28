@@ -512,3 +512,8 @@ def test_build_default_services_diversifies_trending_and_segments(tmp_path: Path
     assert len({x["prod_name"] for x in svc.trending_fallback}) == len(svc.trending_fallback)
     assert "Menswear" in svc.segment_catalog
     assert svc.article_segments["SKU_002"] == "Menswear"
+    assert svc.catalog_size == 24
+    assert serving_main.compute_target_clicks(500) == 2
+    assert serving_main.compute_target_clicks(5000) == 3
+    assert serving_main.compute_target_clicks(34469) == 4
+    assert serving_main.compute_target_clicks(200000) == 5
