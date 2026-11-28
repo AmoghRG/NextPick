@@ -90,17 +90,10 @@ def build_default_services() -> AppServices:
 
     trending: list[dict] = []
     article_segments: dict[str, str] = {}
-    article_names: dict[str, str] = {}
     segment_catalog: dict[str, list[dict]] = {}
     cat_path = art_dir / "catalog.parquet"
     if cat_path.exists():
         full_cat = pd.read_parquet(cat_path).sort_values("train_tx_count", ascending=False)
-        article_names = dict(
-            zip(
-                full_cat["article_id"].astype(str),
-                full_cat["prod_name"].astype(str),
-            )
-        )
         # Keep the top-selling colorway per prod_name so cold-start doesn't repeat identical items
         dedup_cat = full_cat.drop_duplicates(subset=["prod_name"], keep="first")
         if "index_group_name" in full_cat.columns:
@@ -230,7 +223,6 @@ def build_default_services() -> AppServices:
         is_synthetic_demo=is_synthetic_demo,
         article_segments=article_segments,
         segment_catalog=segment_catalog,
-        article_names=article_names,
     )
 
 
@@ -246,7 +238,11 @@ def _diversify_personalized(
     clicked_ids = {e.article_id for e in history}
     raw_name_map = {
         str(x.get("article_id")): str(x.get("prod_name") or "").strip().lower()
-        for x in raw_ranked
+        for x in (
+            list(raw_ranked)
+            + list(svc.trending_fallback)
+            + [it for seg_items in svc.segment_catalog.values() for it in seg_items]
+        )
         if x.get("prod_name")
     }
     clicked_names = {
