@@ -5,6 +5,7 @@ from __future__ import annotations
 import gc
 import json
 import logging
+import math
 import os
 import time
 import uuid
@@ -44,7 +45,7 @@ class AppServices:
         is_synthetic_demo: bool = False,
         article_segments: dict[str, str] | None = None,
         segment_catalog: dict[str, list[dict]] | None = None,
-        article_names: dict[str, str] | None = None,
+        catalog_size: int | None = None,
     ) -> None:
         self.session_store = session_store
         self.retriever = retriever
@@ -53,7 +54,14 @@ class AppServices:
         self.is_synthetic_demo = is_synthetic_demo
         self.article_segments = article_segments or {}
         self.segment_catalog = segment_catalog or {}
-        self.article_names = article_names or {}
+        self.catalog_size = catalog_size if catalog_size is not None else len(self.article_segments) or len(self.trending_fallback)
+
+
+def compute_target_clicks(catalog_size: int) -> int:
+    """Compute recommended clicks to converge from catalog size (~10x narrowing/click, clamped [2, 6])."""
+    if catalog_size <= 0:
+        return 3
+    return max(2, min(6, math.ceil(math.log10(max(catalog_size, 10))) - 1))
 
 
 def build_default_services() -> AppServices:
@@ -97,6 +105,7 @@ def build_default_services() -> AppServices:
     trending: list[dict] = []
     article_segments: dict[str, str] = {}
     segment_catalog: dict[str, list[dict]] = {}
+    catalog_size = 0
     cat_path = art_dir / "catalog.parquet"
     if cat_path.exists():
         cat_cols = [
@@ -116,6 +125,7 @@ def build_default_services() -> AppServices:
         except Exception:
             read_cols = None
         full_cat = pd.read_parquet(cat_path, columns=read_cols).sort_values("train_tx_count", ascending=False)
+        catalog_size = len(full_cat)
         # Keep the top-selling colorway per prod_name so cold-start doesn't repeat identical items
         dedup_cat = full_cat.drop_duplicates(subset=["prod_name"], keep="first")
         if "index_group_name" in full_cat.columns:
@@ -251,6 +261,7 @@ def build_default_services() -> AppServices:
         is_synthetic_demo=is_synthetic_demo,
         article_segments=article_segments,
         segment_catalog=segment_catalog,
+        catalog_size=catalog_size,
     )
 
 
@@ -274,7 +285,7 @@ def _diversify_personalized(
         if x.get("prod_name")
     }
     clicked_names = {
-        (svc.article_names.get(aid) or raw_name_map.get(aid) or "").strip().lower()
+        raw_name_map.get(aid, "").strip().lower()
         for aid in clicked_ids
     } - {""}
     hist_segs = [
@@ -293,7 +304,8 @@ def _diversify_personalized(
         else:
             target_segs = unique_segs
 
-    early_session = len(history) <= 2
+    target_clicks = compute_target_clicks(svc.catalog_size)
+    early_session = len(history) < max(2, target_clicks - 1)
     max_per_dept = 2 if early_session else 4
     max_per_group = None if product_group else (3 if early_session else 7)
 
@@ -497,6 +509,8 @@ def create_app(services: AppServices | None = None) -> FastAPI:
                 "mode": "cold_start_trending",
                 "ranker_mode": svc.ranker.mode,
                 "is_synthetic_demo": svc.is_synthetic_demo,
+                "catalog_size": svc.catalog_size,
+                "target_clicks": compute_target_clicks(svc.catalog_size),
                 "history_len": 0,
                 "items": items[:top_k],
                 "latency_ms": {
@@ -544,6 +558,8 @@ def create_app(services: AppServices | None = None) -> FastAPI:
             "mode": "two_stage_personalized",
             "ranker_mode": svc.ranker.mode,
             "is_synthetic_demo": svc.is_synthetic_demo,
+            "catalog_size": svc.catalog_size,
+            "target_clicks": compute_target_clicks(svc.catalog_size),
             "history_len": len(history),
             "items": ranked,
             "latency_ms": {
