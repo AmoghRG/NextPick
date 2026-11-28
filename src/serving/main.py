@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import gc
 import json
 import logging
 import os
@@ -84,6 +85,8 @@ def build_default_services() -> AppServices:
             str(r.article_id): np.asarray(r.embedding, dtype=np.float32)
             for r in emb_df.itertuples(index=False)
         }
+        del emb_df
+        gc.collect()
 
     trending: list[dict] = []
     article_segments: dict[str, str] = {}
@@ -212,6 +215,8 @@ def build_default_services() -> AppServices:
                     "stage2_logit": 0.0,
                 }
             )
+        del full_cat, dedup_cat, cat_rows
+        gc.collect()
 
     onnx_path = art_dir / "user_tower.onnx"
     lgbm_path = art_dir / "lgbm_ranker.txt"
