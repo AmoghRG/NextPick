@@ -87,13 +87,35 @@ def build_default_services() -> AppServices:
         }
         del emb_df
         gc.collect()
+        try:
+            import pyarrow as pa
+
+            pa.default_memory_pool().release_unused()
+        except Exception:
+            pass
 
     trending: list[dict] = []
     article_segments: dict[str, str] = {}
     segment_catalog: dict[str, list[dict]] = {}
     cat_path = art_dir / "catalog.parquet"
     if cat_path.exists():
-        full_cat = pd.read_parquet(cat_path).sort_values("train_tx_count", ascending=False)
+        cat_cols = [
+            "article_id",
+            "prod_name",
+            "product_group_name",
+            "index_group_name",
+            "department_name",
+            "avg_price",
+            "train_tx_count",
+        ]
+        try:
+            import pyarrow.parquet as pq
+
+            avail = set(pq.read_schema(cat_path).names)
+            read_cols = [c for c in cat_cols if c in avail]
+        except Exception:
+            read_cols = None
+        full_cat = pd.read_parquet(cat_path, columns=read_cols).sort_values("train_tx_count", ascending=False)
         # Keep the top-selling colorway per prod_name so cold-start doesn't repeat identical items
         dedup_cat = full_cat.drop_duplicates(subset=["prod_name"], keep="first")
         if "index_group_name" in full_cat.columns:
@@ -210,6 +232,12 @@ def build_default_services() -> AppServices:
             )
         del full_cat, dedup_cat, cat_rows
         gc.collect()
+        try:
+            import pyarrow as pa
+
+            pa.default_memory_pool().release_unused()
+        except Exception:
+            pass
 
     onnx_path = art_dir / "user_tower.onnx"
     lgbm_path = art_dir / "lgbm_ranker.txt"
